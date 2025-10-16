@@ -192,6 +192,14 @@ startdb --storage=disk --data=my_database.json get key:1
 
 ---
 
+## 📖 Documentation
+
+- **[Usage Guide](docs/USAGE.md)** - Complete guide on how to use StartDB
+- **[Quick Reference](docs/QUICK_REFERENCE.md)** - Quick command reference
+- **[Architecture](ARCHITECTURE.md)** - Technical architecture and design decisions
+
+---
+
 ## 🤝 Contributing
 
 Contributions are welcome! This is a learning project, so:

@@ -38,6 +38,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVarP(&dataFile, "data", "d", "startdb.json", "Data file path for disk storage")
 	
 	rootCmd.AddCommand(versionCmd)
+	rootCmd.AddCommand(shellCmd)
 	rootCmd.AddCommand(setCmd)
 	rootCmd.AddCommand(getCmd)
 	rootCmd.AddCommand(deleteCmd)
