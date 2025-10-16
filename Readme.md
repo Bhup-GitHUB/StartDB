@@ -74,11 +74,11 @@ _StartDB's layered architecture with AI-powered optimization_
 
 ## 🗺️ Roadmap
 
-### Phase 1: Foundation 📅
+### Phase 1: Foundation ✅
 
-- [ ] In-memory key-value store
-- [ ] Basic CRUD operations
-- [ ] CLI interface
+- [x] In-memory key-value store
+- [x] Basic CRUD operations
+- [x] CLI interface
 
 ### Phase 2: Persistence 📅
 
@@ -110,6 +110,57 @@ _StartDB's layered architecture with AI-powered optimization_
 
 ---
 
+## 🚀 Getting Started
+
+### Prerequisites
+
+- **Go** 1.21 or higher
+
+### Quick Start
+
+#### 1. Clone the Repository
+
+```bash
+git clone https://github.com/Bhup-GitHUB/startdb.git
+cd startdb
+```
+
+#### 2. Build and Run
+
+```bash
+go build -o bin/startdb ./cmd/startdb
+./bin/startdb
+```
+
+#### 3. Basic Usage
+
+```bash
+startdb> put user:1 "John Doe"
+OK
+
+startdb> get user:1
+Value: John Doe
+
+startdb> exists user:1
+Exists: true
+
+startdb> delete user:1
+OK
+
+startdb> quit
+Goodbye!
+```
+
+### Available Commands
+
+- `put <key> <value>` - Store a key-value pair
+- `get <key>` - Retrieve a value by key
+- `delete <key>` - Remove a key-value pair
+- `exists <key>` - Check if a key exists
+- `quit` or `exit` - Exit the CLI
+
+---
+
 ## 🤝 Contributing
 
 Contributions are welcome! This is a learning project, so:
@@ -124,6 +175,7 @@ Contributions are welcome! This is a learning project, so:
 ## 📜 License
 
 MIT License © 2025 Bhupesh Kumar
+F
 
 ---
 
