@@ -70,6 +70,14 @@ _StartDB's layered architecture with AI-powered optimization_
 - **Observability**: Built-in metrics export for Prometheus/Grafana monitoring
 - **Distributed Ready**: Foundation for multi-node clusters (future phase)
 
+### 🚀 Aerospike-Inspired Performance
+
+- **Hybrid Memory Architecture**: Combines RAM speed with SSD persistence for optimal performance
+- **Automatic Sharding**: Intelligent data distribution across nodes for load balancing
+- **Multi-Tiered Storage**: Flexible storage options (in-memory, hybrid-flash, all-flash)
+- **Smart Client**: Automatic cluster awareness and traffic distribution
+- **Real-time Notifications**: Event streaming for data changes and system events
+
 ---
 
 ## 🗺️ Roadmap
@@ -107,6 +115,16 @@ _StartDB's layered architecture with AI-powered optimization_
 - [ ] Horizontal scaling
 - [ ] Distributed transactions
 - [ ] Multi-region support
+
+### Phase 6: Aerospike-Inspired Features 📅
+
+- [ ] **Hybrid Memory Architecture**: RAM + SSD optimization for speed and storage efficiency
+- [ ] **Automatic Sharding**: Smart data distribution across nodes with load balancing
+- [ ] **Multi-Tiered Storage**: In-memory, hybrid-flash, and all-flash storage options
+- [ ] **Smart Client**: Automatic traffic distribution and cluster awareness
+- [ ] **Dynamic Cluster Management**: Auto-rebalancing and node management
+- [ ] **Change Notifications**: Real-time event streaming for data changes
+- [ ] **Lossless Compression**: Efficient storage with compression algorithms
 
 ---
 
