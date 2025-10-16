@@ -13,6 +13,12 @@ var existsCmd = &cobra.Command{
 Returns true if the key exists, false otherwise.`,
 	Args: cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
+		if err := initStorage(); err != nil {
+			fmt.Printf("Error: %v\n", err)
+			return
+		}
+		defer Cleanup()
+
 		key := args[0]
 
 		exists, err := db.Exists(key)

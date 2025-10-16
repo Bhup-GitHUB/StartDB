@@ -13,6 +13,12 @@ var setCmd = &cobra.Command{
 The value can contain spaces and will be stored as provided.`,
 	Args: cobra.MinimumNArgs(2),
 	Run: func(cmd *cobra.Command, args []string) {
+		if err := initStorage(); err != nil {
+			fmt.Printf("Error: %v\n", err)
+			return
+		}
+		defer Cleanup()
+
 		key := args[0]
 		value := args[1]
 		

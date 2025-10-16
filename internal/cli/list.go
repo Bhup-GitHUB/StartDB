@@ -14,6 +14,12 @@ var listCmd = &cobra.Command{
 Keys are displayed in alphabetical order.`,
 	Args: cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
+		if err := initStorage(); err != nil {
+			fmt.Printf("Error: %v\n", err)
+			return
+		}
+		defer Cleanup()
+
 		keys, err := db.Keys()
 		if err != nil {
 			fmt.Printf("Error: %v\n", err)

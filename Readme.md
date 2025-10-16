@@ -88,9 +88,9 @@ _StartDB's layered architecture with AI-powered optimization_
 - [x] Basic CRUD operations
 - [x] CLI interface
 
-### Phase 2: Persistence 📅
+### Phase 2: Persistence ✅
 
-- [ ] Disk-based storage
+- [x] Disk-based storage
 - [ ] Write-Ahead Logging
 - [ ] Crash recovery
 - [ ] Concurrent transactions
@@ -152,30 +152,43 @@ go build -o bin/startdb ./cmd/startdb
 
 #### 3. Basic Usage
 
+**Memory Storage (Default):**
+
 ```bash
-startdb> put user:1 "John Doe"
-OK
+startdb set user:1 "John Doe"
+startdb get user:1
+startdb list
+```
 
-startdb> get user:1
-Value: John Doe
+**Disk Storage (Persistent):**
 
-startdb> exists user:1
-Exists: true
+```bash
+startdb --storage=disk set user:1 "John Doe"
+startdb --storage=disk get user:1
+startdb --storage=disk list
+```
 
-startdb> delete user:1
-OK
+**Custom Data File:**
 
-startdb> quit
-Goodbye!
+```bash
+startdb --storage=disk --data=my_database.json set key:1 "Custom file"
+startdb --storage=disk --data=my_database.json get key:1
 ```
 
 ### Available Commands
 
-- `put <key> <value>` - Store a key-value pair
+- `set <key> <value>` - Store a key-value pair
 - `get <key>` - Retrieve a value by key
 - `delete <key>` - Remove a key-value pair
 - `exists <key>` - Check if a key exists
-- `quit` or `exit` - Exit the CLI
+- `list` - List all keys in the database
+- `version` - Show version information
+
+### Storage Options
+
+- `--storage=memory` - In-memory storage (default, temporary)
+- `--storage=disk` - Disk storage (persistent)
+- `--data=filename.json` - Custom data file path
 
 ---
 

@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"fmt"
 	"os"
 
 	"startdb/internal/storage"
@@ -9,7 +10,9 @@ import (
 )
 
 var (
-	db *storage.Storage
+	db        *storage.Storage
+	storageType string
+	dataFile  string
 )
 
 var rootCmd = &cobra.Command{
@@ -31,8 +34,8 @@ func Execute() {
 }
 
 func init() {
-	engine := storage.NewMemoryEngine()
-	db = storage.New(engine)
+	rootCmd.PersistentFlags().StringVarP(&storageType, "storage", "s", "memory", "Storage type: memory or disk")
+	rootCmd.PersistentFlags().StringVarP(&dataFile, "data", "d", "startdb.json", "Data file path for disk storage")
 	
 	rootCmd.AddCommand(versionCmd)
 	rootCmd.AddCommand(setCmd)
@@ -40,6 +43,26 @@ func init() {
 	rootCmd.AddCommand(deleteCmd)
 	rootCmd.AddCommand(listCmd)
 	rootCmd.AddCommand(existsCmd)
+}
+
+func initStorage() error {
+	var engine storage.Engine
+	var err error
+
+	switch storageType {
+	case "memory":
+		engine = storage.NewMemoryEngine()
+	case "disk":
+		engine, err = storage.NewDiskEngine(dataFile)
+		if err != nil {
+			return fmt.Errorf("failed to initialize disk storage: %w", err)
+		}
+	default:
+		return fmt.Errorf("invalid storage type: %s (use 'memory' or 'disk')", storageType)
+	}
+
+	db = storage.New(engine)
+	return nil
 }
 
 func Cleanup() {
