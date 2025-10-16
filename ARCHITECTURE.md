@@ -15,6 +15,14 @@
 
 ## Architecture Overview
 
+<div align="center">
+
+![StartDB Architecture](image.png)
+
+_Visual representation of StartDB's layered architecture_
+
+</div>
+
 StartDB follows a **layered microservices architecture** with clear separation between:
 
 - **Core Database Engine** (Go) - Low-latency OLTP operations

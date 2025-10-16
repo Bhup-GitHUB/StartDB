@@ -33,6 +33,18 @@ StartDB automates this entire workflow through intelligent pattern recognition a
 
 ---
 
+## 🏛️ Architecture
+
+<div align="center">
+
+![StartDB Architecture](image.png)
+
+_StartDB's layered architecture with AI-powered optimization_
+
+</div>
+
+---
+
 ## ✨ Key Features
 
 ### 🏗️ Core Database Engine (Go)
