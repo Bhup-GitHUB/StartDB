@@ -11,8 +11,11 @@ import (
 
 var (
 	db        *storage.Storage
+	walStorage storage.WALEngine
 	storageType string
 	dataFile  string
+	walEnabled bool
+	walFile   string
 )
 
 var rootCmd = &cobra.Command{
@@ -36,6 +39,8 @@ func Execute() {
 func init() {
 	rootCmd.PersistentFlags().StringVarP(&storageType, "storage", "s", "memory", "Storage type: memory or disk")
 	rootCmd.PersistentFlags().StringVarP(&dataFile, "data", "d", "startdb.json", "Data file path for disk storage")
+	rootCmd.PersistentFlags().BoolVarP(&walEnabled, "wal", "w", false, "Enable Write-Ahead Logging for crash recovery")
+	rootCmd.PersistentFlags().StringVarP(&walFile, "wal-file", "", "", "WAL file path (auto-generated if not specified)")
 	
 	rootCmd.AddCommand(versionCmd)
 	rootCmd.AddCommand(shellCmd)
@@ -44,25 +49,57 @@ func init() {
 	rootCmd.AddCommand(deleteCmd)
 	rootCmd.AddCommand(listCmd)
 	rootCmd.AddCommand(existsCmd)
+	rootCmd.AddCommand(checkpointCmd)
+	rootCmd.AddCommand(recoverCmd)
 }
 
 func initStorage() error {
 	var engine storage.Engine
 	var err error
 
+	var walPath string
+	if walEnabled {
+		if walFile != "" {
+			walPath = walFile
+		} else {
+			if storageType == "disk" {
+				walPath = dataFile + ".wal"
+			} else {
+				walPath = "startdb.wal"
+			}
+		}
+	}
+
 	switch storageType {
 	case "memory":
-		engine = storage.NewMemoryEngine()
+		if walEnabled {
+			walStorage, err = storage.NewWALMemoryEngine(walPath)
+			if err != nil {
+				return fmt.Errorf("failed to initialize WAL memory storage: %w", err)
+			}
+			db = storage.New(walStorage)
+		} else {
+			engine = storage.NewMemoryEngine()
+			db = storage.New(engine)
+		}
 	case "disk":
-		engine, err = storage.NewDiskEngine(dataFile)
-		if err != nil {
-			return fmt.Errorf("failed to initialize disk storage: %w", err)
+		if walEnabled {
+			walStorage, err = storage.NewWALDiskEngine(dataFile, walPath)
+			if err != nil {
+				return fmt.Errorf("failed to initialize WAL disk storage: %w", err)
+			}
+			db = storage.New(walStorage)
+		} else {
+			engine, err = storage.NewDiskEngine(dataFile)
+			if err != nil {
+				return fmt.Errorf("failed to initialize disk storage: %w", err)
+			}
+			db = storage.New(engine)
 		}
 	default:
 		return fmt.Errorf("invalid storage type: %s (use 'memory' or 'disk')", storageType)
 	}
 
-	db = storage.New(engine)
 	return nil
 }
 

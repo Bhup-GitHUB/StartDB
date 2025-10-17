@@ -91,8 +91,8 @@ _StartDB's layered architecture with AI-powered optimization_
 ### Phase 2: Persistence ✅
 
 - [x] Disk-based storage
-- [ ] Write-Ahead Logging
-- [ ] Crash recovery
+- [x] Write-Ahead Logging
+- [x] Crash recovery
 - [ ] Concurrent transactions
 
 ### Phase 3: Query Engine 📅
@@ -175,6 +175,20 @@ startdb --storage=disk --data=my_database.json set key:1 "Custom file"
 startdb --storage=disk --data=my_database.json get key:1
 ```
 
+**With Write-Ahead Logging (WAL):**
+
+```bash
+# Enable WAL for crash recovery
+startdb --storage=disk --wal --data=my_database.json set user:1 "John Doe"
+startdb --storage=disk --wal --data=my_database.json get user:1
+
+# Create a checkpoint to truncate WAL
+startdb --storage=disk --wal --data=my_database.json checkpoint
+
+# Recover from crash by replaying WAL
+startdb --storage=disk --wal --data=my_database.json recover
+```
+
 ### Available Commands
 
 - `set <key> <value>` - Store a key-value pair
@@ -182,6 +196,8 @@ startdb --storage=disk --data=my_database.json get key:1
 - `delete <key>` - Remove a key-value pair
 - `exists <key>` - Check if a key exists
 - `list` - List all keys in the database
+- `checkpoint` - Create a checkpoint (truncate WAL)
+- `recover` - Recover from crash (replay WAL)
 - `version` - Show version information
 
 ### Storage Options
@@ -189,6 +205,8 @@ startdb --storage=disk --data=my_database.json get key:1
 - `--storage=memory` - In-memory storage (default, temporary)
 - `--storage=disk` - Disk storage (persistent)
 - `--data=filename.json` - Custom data file path
+- `--wal` - Enable Write-Ahead Logging for crash recovery
+- `--wal-file=filename.wal` - Custom WAL file path
 
 ---
 

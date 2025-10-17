@@ -8,3 +8,10 @@ type Engine interface {
 	Keys() ([]string, error)
 	Close() error
 }
+
+type WALEngine interface {
+	Engine
+	Checkpoint() error
+	Recover() error
+	GetWALPath() string
+}

@@ -23,9 +23,17 @@ Type 'help' for available commands, 'quit' to exit.`,
 		}
 		defer Cleanup()
 
-		fmt.Printf("StartDB Interactive Shell (Storage: %s)\n", storageType)
+		fmt.Printf("StartDB Interactive Shell (Storage: %s", storageType)
+		if walEnabled {
+			fmt.Printf(", WAL: enabled")
+		}
+		fmt.Println(")")
+		
 		if storageType == "disk" {
 			fmt.Printf("Data file: %s\n", dataFile)
+		}
+		if walEnabled && walStorage != nil {
+			fmt.Printf("WAL file: %s\n", walStorage.GetWALPath())
 		}
 		fmt.Println("Type 'help' for commands, 'quit' to exit")
 		fmt.Println()
@@ -128,6 +136,49 @@ Type 'help' for available commands, 'quit' to exit.`,
 			case "clear":
 				fmt.Print("\033[H\033[2J")
 
+			case "checkpoint":
+				if !walEnabled {
+					fmt.Println("Error: WAL is not enabled")
+					continue
+				}
+				if walStorage == nil {
+					fmt.Println("Error: WAL storage not initialized")
+					continue
+				}
+				err := walStorage.Checkpoint()
+				if err != nil {
+					fmt.Printf("Error creating checkpoint: %v\n", err)
+				} else {
+					fmt.Println("Checkpoint created successfully")
+				}
+
+			case "recover":
+				if !walEnabled {
+					fmt.Println("Error: WAL is not enabled")
+					continue
+				}
+				if walStorage == nil {
+					fmt.Println("Error: WAL storage not initialized")
+					continue
+				}
+				err := walStorage.Recover()
+				if err != nil {
+					fmt.Printf("Error during recovery: %v\n", err)
+				} else {
+					fmt.Println("Recovery completed successfully")
+				}
+
+			case "wal-status":
+				if walEnabled {
+					if walStorage != nil {
+						fmt.Printf("WAL enabled - File: %s\n", walStorage.GetWALPath())
+					} else {
+						fmt.Println("WAL enabled but not initialized")
+					}
+				} else {
+					fmt.Println("WAL disabled")
+				}
+
 			default:
 				fmt.Printf("Unknown command: %s (type 'help' for available commands)\n", command)
 			}
@@ -143,6 +194,11 @@ func printHelp() {
 	fmt.Println("  exists <key>         - Check if a key exists")
 	fmt.Println("  list                 - List all keys")
 	fmt.Println("  clear                - Clear screen")
+	if walEnabled {
+		fmt.Println("  checkpoint           - Create a checkpoint (truncate WAL)")
+		fmt.Println("  recover              - Recover from crash (replay WAL)")
+		fmt.Println("  wal-status           - Show WAL status")
+	}
 	fmt.Println("  help                 - Show this help")
 	fmt.Println("  quit/exit            - Exit shell")
 }
