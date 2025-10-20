@@ -105,6 +105,38 @@ func (ws *WALStorage) GetWALPath() string {
 	return ws.wal.filePath
 }
 
+func (ws *WALStorage) BeginTransaction() *Transaction {
+	return ws.engine.BeginTransaction()
+}
+
+func (ws *WALStorage) CommitTransaction(tx *Transaction) error {
+	// Log all operations in the transaction
+	for key, value := range tx.GetWriteSet() {
+		if err := ws.wal.LogPut(key, value); err != nil {
+			return fmt.Errorf("failed to log PUT operation for key %s: %w", key, err)
+		}
+	}
+
+	for key := range tx.GetDeletedSet() {
+		if err := ws.wal.LogDelete(key); err != nil {
+			return fmt.Errorf("failed to log DELETE operation for key %s: %w", key, err)
+		}
+	}
+
+	// Log commit
+	if err := ws.wal.LogCommit(); err != nil {
+		return fmt.Errorf("failed to log COMMIT: %w", err)
+	}
+
+	// Apply the transaction to the engine
+	return ws.engine.CommitTransaction(tx)
+}
+
+func (ws *WALStorage) AbortTransaction(tx *Transaction) error {
+	// For WAL storage, abort is handled by the underlying engine
+	return ws.engine.AbortTransaction(tx)
+}
+
 func NewWALMemoryEngine(walPath string) (*WALStorage, error) {
 	engine := NewMemoryEngine()
 	return NewWALStorage(engine, walPath)

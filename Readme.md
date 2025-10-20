@@ -93,7 +93,7 @@ _StartDB's layered architecture with AI-powered optimization_
 - [x] Disk-based storage
 - [x] Write-Ahead Logging
 - [x] Crash recovery
-- [ ] Concurrent transactions
+- [x] Concurrent transactions
 
 ### Phase 3: Query Engine 📅
 
@@ -189,6 +189,27 @@ startdb --storage=disk --wal --data=my_database.json checkpoint
 startdb --storage=disk --wal --data=my_database.json recover
 ```
 
+**With Transactions:**
+
+```bash
+# Begin a transaction
+startdb --storage=disk begin
+
+# Perform operations within the transaction
+startdb --storage=disk set user:1 "John Doe"
+startdb --storage=disk set user:2 "Jane Smith"
+startdb --storage=disk delete user:3
+
+# Check transaction status
+startdb --storage=disk status
+
+# Commit the transaction (makes changes permanent)
+startdb --storage=disk commit
+
+# Or rollback the transaction (discard changes)
+startdb --storage=disk rollback
+```
+
 ### Available Commands
 
 - `set <key> <value>` - Store a key-value pair
@@ -198,6 +219,10 @@ startdb --storage=disk --wal --data=my_database.json recover
 - `list` - List all keys in the database
 - `checkpoint` - Create a checkpoint (truncate WAL)
 - `recover` - Recover from crash (replay WAL)
+- `begin` - Begin a new transaction
+- `commit` - Commit the current transaction
+- `rollback` - Rollback the current transaction
+- `status` - Show transaction status
 - `version` - Show version information
 
 ### Storage Options

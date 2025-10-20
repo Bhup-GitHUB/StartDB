@@ -7,6 +7,9 @@ type Engine interface {
 	Exists(key string) (bool, error)
 	Keys() ([]string, error)
 	Close() error
+	BeginTransaction() *Transaction
+	CommitTransaction(tx *Transaction) error
+	AbortTransaction(tx *Transaction) error
 }
 
 type WALEngine interface {

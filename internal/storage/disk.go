@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 )
 
 type DiskEngine struct {
@@ -185,4 +186,49 @@ func (d *DiskEngine) Close() error {
 
 	d.closed = true
 	return d.save()
+}
+
+func (d *DiskEngine) BeginTransaction() *Transaction {
+	// For disk engine, we don't need special transaction handling
+	// as it's already thread-safe with mutex
+	return &Transaction{
+		ID:        fmt.Sprintf("disk_tx_%d", time.Now().UnixNano()),
+		StartTime: time.Now(),
+		ReadSet:   make(map[string][]byte),
+		WriteSet:  make(map[string][]byte),
+		Deleted:   make(map[string]bool),
+	}
+}
+
+func (d *DiskEngine) CommitTransaction(tx *Transaction) error {
+	if tx.IsAborted() {
+		return ErrTransactionAborted
+	}
+
+	if tx.IsCommitted() {
+		return ErrTransactionAlreadyCommitted
+	}
+
+	d.mutex.Lock()
+	defer d.mutex.Unlock()
+
+	// Apply write set
+	for key, value := range tx.GetWriteSet() {
+		d.data[key] = make([]byte, len(value))
+		copy(d.data[key], value)
+	}
+
+	// Apply deletions
+	for key := range tx.GetDeletedSet() {
+		delete(d.data, key)
+	}
+
+	// Save to disk
+	return d.save()
+}
+
+func (d *DiskEngine) AbortTransaction(tx *Transaction) error {
+	// For disk engine, abort is a no-op since we don't persist changes
+	// until commit
+	return nil
 }

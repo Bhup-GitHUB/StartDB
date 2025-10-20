@@ -21,12 +21,22 @@ Returns an error if the key does not exist.`,
 
 		key := args[0]
 
-		err := db.Delete(key)
-		if err != nil {
-			fmt.Printf("Error: %v\n", err)
-			return
+		if currentTransaction != nil {
+			// If we're in a transaction, use the transaction's Delete method
+			err := currentTransaction.Delete(key)
+			if err != nil {
+				fmt.Printf("Error: %v\n", err)
+				return
+			}
+			fmt.Printf("OK (Transaction: %s)\n", currentTransaction.ID)
+		} else {
+			// Direct operation
+			err := db.Delete(key)
+			if err != nil {
+				fmt.Printf("Error: %v\n", err)
+				return
+			}
+			fmt.Println("OK")
 		}
-
-		fmt.Println("OK")
 	},
 }

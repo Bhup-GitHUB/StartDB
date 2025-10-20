@@ -21,12 +21,25 @@ Returns true if the key exists, false otherwise.`,
 
 		key := args[0]
 
-		exists, err := db.Exists(key)
-		if err != nil {
-			fmt.Printf("Error: %v\n", err)
-			return
-		}
+		var exists bool
+		var err error
 
-		fmt.Printf("Exists: %t\n", exists)
+		if currentTransaction != nil {
+			// If we're in a transaction, use the transaction's Exists method
+			exists, err = currentTransaction.Exists(key)
+			if err != nil {
+				fmt.Printf("Error: %v\n", err)
+				return
+			}
+			fmt.Printf("Exists: %t (Transaction: %s)\n", exists, currentTransaction.ID)
+		} else {
+			// Direct operation
+			exists, err = db.Exists(key)
+			if err != nil {
+				fmt.Printf("Error: %v\n", err)
+				return
+			}
+			fmt.Printf("Exists: %t\n", exists)
+		}
 	},
 }

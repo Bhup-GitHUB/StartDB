@@ -21,12 +21,25 @@ Returns an error if the key does not exist.`,
 
 		key := args[0]
 
-		value, err := db.Get(key)
-		if err != nil {
-			fmt.Printf("Error: %v\n", err)
-			return
-		}
+		var value []byte
+		var err error
 
-		fmt.Printf("Value: %s\n", string(value))
+		if currentTransaction != nil {
+			// If we're in a transaction, use the transaction's Get method
+			value, err = currentTransaction.Get(key)
+			if err != nil {
+				fmt.Printf("Error: %v\n", err)
+				return
+			}
+			fmt.Printf("Value: %s (Transaction: %s)\n", string(value), currentTransaction.ID)
+		} else {
+			// Direct operation
+			value, err = db.Get(key)
+			if err != nil {
+				fmt.Printf("Error: %v\n", err)
+				return
+			}
+			fmt.Printf("Value: %s\n", string(value))
+		}
 	},
 }

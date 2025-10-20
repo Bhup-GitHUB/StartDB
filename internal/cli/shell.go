@@ -72,11 +72,21 @@ Type 'help' for available commands, 'quit' to exit.`,
 				}
 				key := parts[1]
 				value := strings.Join(parts[2:], " ")
-				err := db.Put(key, []byte(value))
-				if err != nil {
-					fmt.Printf("Error: %v\n", err)
+				
+				if currentTransaction != nil {
+					err := currentTransaction.Put(key, []byte(value))
+					if err != nil {
+						fmt.Printf("Error: %v\n", err)
+					} else {
+						fmt.Printf("OK (Transaction: %s)\n", currentTransaction.ID)
+					}
 				} else {
-					fmt.Println("OK")
+					err := db.Put(key, []byte(value))
+					if err != nil {
+						fmt.Printf("Error: %v\n", err)
+					} else {
+						fmt.Println("OK")
+					}
 				}
 
 			case "get":
@@ -84,11 +94,24 @@ Type 'help' for available commands, 'quit' to exit.`,
 					fmt.Println("Usage: get <key>")
 					continue
 				}
-				value, err := db.Get(parts[1])
-				if err != nil {
-					fmt.Printf("Error: %v\n", err)
+				
+				var value []byte
+				var err error
+				
+				if currentTransaction != nil {
+					value, err = currentTransaction.Get(parts[1])
+					if err != nil {
+						fmt.Printf("Error: %v\n", err)
+					} else {
+						fmt.Printf("Value: %s (Transaction: %s)\n", string(value), currentTransaction.ID)
+					}
 				} else {
-					fmt.Printf("Value: %s\n", string(value))
+					value, err = db.Get(parts[1])
+					if err != nil {
+						fmt.Printf("Error: %v\n", err)
+					} else {
+						fmt.Printf("Value: %s\n", string(value))
+					}
 				}
 
 			case "delete":
@@ -96,11 +119,21 @@ Type 'help' for available commands, 'quit' to exit.`,
 					fmt.Println("Usage: delete <key>")
 					continue
 				}
-				err := db.Delete(parts[1])
-				if err != nil {
-					fmt.Printf("Error: %v\n", err)
+				
+				if currentTransaction != nil {
+					err := currentTransaction.Delete(parts[1])
+					if err != nil {
+						fmt.Printf("Error: %v\n", err)
+					} else {
+						fmt.Printf("OK (Transaction: %s)\n", currentTransaction.ID)
+					}
 				} else {
-					fmt.Println("OK")
+					err := db.Delete(parts[1])
+					if err != nil {
+						fmt.Printf("Error: %v\n", err)
+					} else {
+						fmt.Println("OK")
+					}
 				}
 
 			case "exists":
@@ -108,11 +141,24 @@ Type 'help' for available commands, 'quit' to exit.`,
 					fmt.Println("Usage: exists <key>")
 					continue
 				}
-				exists, err := db.Exists(parts[1])
-				if err != nil {
-					fmt.Printf("Error: %v\n", err)
+				
+				var exists bool
+				var err error
+				
+				if currentTransaction != nil {
+					exists, err = currentTransaction.Exists(parts[1])
+					if err != nil {
+						fmt.Printf("Error: %v\n", err)
+					} else {
+						fmt.Printf("Exists: %t (Transaction: %s)\n", exists, currentTransaction.ID)
+					}
 				} else {
-					fmt.Printf("Exists: %t\n", exists)
+					exists, err = db.Exists(parts[1])
+					if err != nil {
+						fmt.Printf("Error: %v\n", err)
+					} else {
+						fmt.Printf("Exists: %t\n", exists)
+					}
 				}
 
 			case "list":
@@ -179,6 +225,62 @@ Type 'help' for available commands, 'quit' to exit.`,
 					fmt.Println("WAL disabled")
 				}
 
+			case "begin":
+				if currentTransaction != nil {
+					fmt.Printf("Error: Transaction %s already in progress. Use 'commit' or 'rollback' first.\n", currentTransaction.ID)
+					continue
+				}
+				currentTransaction = db.BeginTransaction()
+				fmt.Printf("Transaction %s started\n", currentTransaction.ID)
+
+			case "commit":
+				if currentTransaction == nil {
+					fmt.Println("Error: No transaction in progress. Use 'begin' first.")
+					continue
+				}
+				err := db.CommitTransaction(currentTransaction)
+				if err != nil {
+					fmt.Printf("Error committing transaction: %v\n", err)
+				} else {
+					fmt.Printf("Transaction %s committed successfully\n", currentTransaction.ID)
+					currentTransaction = nil
+				}
+
+			case "rollback":
+				if currentTransaction == nil {
+					fmt.Println("Error: No transaction in progress. Use 'begin' first.")
+					continue
+				}
+				err := db.AbortTransaction(currentTransaction)
+				if err != nil {
+					fmt.Printf("Error rolling back transaction: %v\n", err)
+				} else {
+					fmt.Printf("Transaction %s rolled back successfully\n", currentTransaction.ID)
+					currentTransaction = nil
+				}
+
+			case "status":
+				if currentTransaction == nil {
+					fmt.Println("No transaction in progress")
+					continue
+				}
+				fmt.Printf("Transaction ID: %s\n", currentTransaction.ID)
+				fmt.Printf("Start Time: %s\n", currentTransaction.StartTime.Format("2006-01-02 15:04:05"))
+				fmt.Printf("Status: Active\n")
+				
+				writeSet := currentTransaction.GetWriteSet()
+				deletedSet := currentTransaction.GetDeletedSet()
+				
+				fmt.Printf("Write Set: %d operations\n", len(writeSet))
+				for key := range writeSet {
+					fmt.Printf("  PUT %s\n", key)
+				}
+				
+				fmt.Printf("Delete Set: %d operations\n", len(deletedSet))
+				for key := range deletedSet {
+					fmt.Printf("  DELETE %s\n", key)
+				}
+
 			default:
 				fmt.Printf("Unknown command: %s (type 'help' for available commands)\n", command)
 			}
@@ -194,6 +296,10 @@ func printHelp() {
 	fmt.Println("  exists <key>         - Check if a key exists")
 	fmt.Println("  list                 - List all keys")
 	fmt.Println("  clear                - Clear screen")
+	fmt.Println("  begin                - Begin a new transaction")
+	fmt.Println("  commit               - Commit the current transaction")
+	fmt.Println("  rollback             - Rollback the current transaction")
+	fmt.Println("  status               - Show transaction status")
 	if walEnabled {
 		fmt.Println("  checkpoint           - Create a checkpoint (truncate WAL)")
 		fmt.Println("  recover              - Recover from crash (replay WAL)")

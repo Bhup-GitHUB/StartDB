@@ -51,6 +51,10 @@ func init() {
 	rootCmd.AddCommand(existsCmd)
 	rootCmd.AddCommand(checkpointCmd)
 	rootCmd.AddCommand(recoverCmd)
+	rootCmd.AddCommand(beginCmd)
+	rootCmd.AddCommand(commitCmd)
+	rootCmd.AddCommand(rollbackCmd)
+	rootCmd.AddCommand(statusCmd)
 }
 
 func initStorage() error {

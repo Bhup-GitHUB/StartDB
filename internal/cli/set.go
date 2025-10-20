@@ -32,12 +32,22 @@ The value can contain spaces and will be stored as provided.`,
 			}
 		}
 
-		err := db.Put(key, []byte(value))
-		if err != nil {
-			fmt.Printf("Error: %v\n", err)
-			return
+		if currentTransaction != nil {
+			// If we're in a transaction, use the transaction's Put method
+			err := currentTransaction.Put(key, []byte(value))
+			if err != nil {
+				fmt.Printf("Error: %v\n", err)
+				return
+			}
+			fmt.Printf("OK (Transaction: %s)\n", currentTransaction.ID)
+		} else {
+			// Direct operation
+			err := db.Put(key, []byte(value))
+			if err != nil {
+				fmt.Printf("Error: %v\n", err)
+				return
+			}
+			fmt.Println("OK")
 		}
-
-		fmt.Println("OK")
 	},
 }

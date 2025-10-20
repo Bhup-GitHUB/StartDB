@@ -1,7 +1,9 @@
 package storage
 
 import (
+	"fmt"
 	"sync"
+	"time"
 )
 
 type MemoryEngine struct {
@@ -121,5 +123,49 @@ func (m *MemoryEngine) Close() error {
 
 	m.closed = true
 	m.data = nil
+	return nil
+}
+
+func (m *MemoryEngine) BeginTransaction() *Transaction {
+	// For memory engine, we don't need special transaction handling
+	// as it's already thread-safe with mutex
+	return &Transaction{
+		ID:        fmt.Sprintf("mem_tx_%d", time.Now().UnixNano()),
+		StartTime: time.Now(),
+		ReadSet:   make(map[string][]byte),
+		WriteSet:  make(map[string][]byte),
+		Deleted:   make(map[string]bool),
+	}
+}
+
+func (m *MemoryEngine) CommitTransaction(tx *Transaction) error {
+	if tx.IsAborted() {
+		return ErrTransactionAborted
+	}
+
+	if tx.IsCommitted() {
+		return ErrTransactionAlreadyCommitted
+	}
+
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+
+	// Apply write set
+	for key, value := range tx.GetWriteSet() {
+		m.data[key] = make([]byte, len(value))
+		copy(m.data[key], value)
+	}
+
+	// Apply deletions
+	for key := range tx.GetDeletedSet() {
+		delete(m.data, key)
+	}
+
+	return nil
+}
+
+func (m *MemoryEngine) AbortTransaction(tx *Transaction) error {
+	// For memory engine, abort is a no-op since we don't persist changes
+	// until commit
 	return nil
 }
