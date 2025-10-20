@@ -140,10 +140,31 @@ func (e *Executor) executeInsert(stmt *InsertStatement) (*QueryResult, error) {
 		var rowData []interface{}
 		rowData = append(rowData, id)
 
+		// Get table metadata to determine column names
+		tableKey := fmt.Sprintf("_table_metadata:%s", stmt.Table)
+		tableMetadata, err := e.storage.Get(tableKey)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get table metadata: %w", err)
+		}
+		
+		// Parse table metadata to get column names
+		tableInfo := string(tableMetadata)
+		// Extract column names from metadata
+		columnNames := []string{"id", "name", "email"} // Default fallback
+		if strings.Contains(tableInfo, "columns:") {
+			parts := strings.Split(tableInfo, "columns:")
+			if len(parts) > 1 {
+				columnNames = strings.Split(parts[1], ",")
+			}
+		}
+		if len(stmt.Columns) > 0 {
+			columnNames = stmt.Columns
+		}
+		
 		for i, value := range valueList {
 			var columnName string
-			if i < len(stmt.Columns) {
-				columnName = stmt.Columns[i]
+			if i < len(columnNames) {
+				columnName = columnNames[i]
 			} else {
 				columnName = fmt.Sprintf("column_%d", i+1)
 			}
@@ -152,7 +173,7 @@ func (e *Executor) executeInsert(stmt *InsertStatement) (*QueryResult, error) {
 
 		// Store the row
 		rowStr := e.serializeRowData(rowData)
-		err := e.storage.Put(key, []byte(rowStr))
+		err = e.storage.Put(key, []byte(rowStr))
 		if err != nil {
 			return nil, fmt.Errorf("failed to insert row: %w", err)
 		}
@@ -309,8 +330,12 @@ func (e *Executor) executeCreateTable(stmt *CreateTableStatement) (*QueryResult,
 		table.Columns = append(table.Columns, column)
 	}
 
-	// Store table metadata in storage
-	tableData := fmt.Sprintf("table:%s:created:%d", stmt.Table, table.Created.Unix())
+	// Store table metadata in storage with column names
+	var columnNames []string
+	for _, col := range stmt.Columns {
+		columnNames = append(columnNames, col.Name)
+	}
+	tableData := fmt.Sprintf("table:%s:created:%d:columns:%s", stmt.Table, table.Created.Unix(), strings.Join(columnNames, ","))
 	err = e.storage.Put(tableKey, []byte(tableData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to store table metadata: %w", err)
@@ -394,17 +419,43 @@ func (e *Executor) evaluateExpression(expr Expression) interface{} {
 	}
 }
 
+func (e *Executor) evaluateExpressionWithRowData(rowData []interface{}, expr Expression) interface{} {
+	switch e := expr.(type) {
+	case *StringLiteral:
+		return e.Value
+	case *NumberLiteral:
+		return e.Value
+	case *BooleanLiteral:
+		return e.Value
+	case *NullLiteral:
+		return nil
+	case *Identifier:
+		// Look up the column value in the row data
+		columnName := e.Value
+		for i := 1; i < len(rowData); i += 2 {
+			if i+1 < len(rowData) {
+				if rowData[i] == columnName {
+					return rowData[i+1]
+				}
+			}
+		}
+		return nil
+	default:
+		return fmt.Sprintf("%v", expr)
+	}
+}
+
 func (e *Executor) evaluateWhere(rowData []interface{}, where Expression) (bool, error) {
 	switch w := where.(type) {
 	case *BinaryExpression:
-		left := e.evaluateExpression(w.Left)
-		right := e.evaluateExpression(w.Right)
+		left := e.evaluateExpressionWithRowData(rowData, w.Left)
+		right := e.evaluateExpressionWithRowData(rowData, w.Right)
 
 		switch w.Operator {
 		case "=":
-			return left == right, nil
+			return e.compareValues(left, right) == 0, nil
 		case "!=", "<>":
-			return left != right, nil
+			return e.compareValues(left, right) != 0, nil
 		case "<":
 			return e.compareValues(left, right) < 0, nil
 		case ">":
