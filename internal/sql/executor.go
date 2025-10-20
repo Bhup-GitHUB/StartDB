@@ -12,14 +12,12 @@ import (
 // Executor represents a SQL query executor
 type Executor struct {
 	storage *storage.Storage
-	tables  map[string]*TableMetadata
 }
 
 // NewExecutor creates a new SQL executor
 func NewExecutor(storage *storage.Storage) *Executor {
 	return &Executor{
 		storage: storage,
-		tables:  make(map[string]*TableMetadata),
 	}
 }
 
@@ -45,7 +43,9 @@ func (e *Executor) Execute(stmt Statement) (*QueryResult, error) {
 
 func (e *Executor) executeSelect(stmt *SelectStatement) (*QueryResult, error) {
 	// Check if table exists
-	if _, exists := e.tables[stmt.Table]; !exists {
+	tableKey := fmt.Sprintf("_table_metadata:%s", stmt.Table)
+	_, err := e.storage.Get(tableKey)
+	if err != nil {
 		return nil, fmt.Errorf("table '%s' does not exist", stmt.Table)
 	}
 
@@ -123,7 +123,9 @@ func (e *Executor) executeSelect(stmt *SelectStatement) (*QueryResult, error) {
 
 func (e *Executor) executeInsert(stmt *InsertStatement) (*QueryResult, error) {
 	// Check if table exists
-	if _, exists := e.tables[stmt.Table]; !exists {
+	tableKey := fmt.Sprintf("_table_metadata:%s", stmt.Table)
+	_, err := e.storage.Get(tableKey)
+	if err != nil {
 		return nil, fmt.Errorf("table '%s' does not exist", stmt.Table)
 	}
 
@@ -139,7 +141,12 @@ func (e *Executor) executeInsert(stmt *InsertStatement) (*QueryResult, error) {
 		rowData = append(rowData, id)
 
 		for i, value := range valueList {
-			columnName := stmt.Columns[i]
+			var columnName string
+			if i < len(stmt.Columns) {
+				columnName = stmt.Columns[i]
+			} else {
+				columnName = fmt.Sprintf("column_%d", i+1)
+			}
 			rowData = append(rowData, columnName, e.evaluateExpression(value))
 		}
 
@@ -162,7 +169,9 @@ func (e *Executor) executeInsert(stmt *InsertStatement) (*QueryResult, error) {
 
 func (e *Executor) executeUpdate(stmt *UpdateStatement) (*QueryResult, error) {
 	// Check if table exists
-	if _, exists := e.tables[stmt.Table]; !exists {
+	tableKey := fmt.Sprintf("_table_metadata:%s", stmt.Table)
+	_, err := e.storage.Get(tableKey)
+	if err != nil {
 		return nil, fmt.Errorf("table '%s' does not exist", stmt.Table)
 	}
 
@@ -219,7 +228,9 @@ func (e *Executor) executeUpdate(stmt *UpdateStatement) (*QueryResult, error) {
 
 func (e *Executor) executeDelete(stmt *DeleteStatement) (*QueryResult, error) {
 	// Check if table exists
-	if _, exists := e.tables[stmt.Table]; !exists {
+	tableKey := fmt.Sprintf("_table_metadata:%s", stmt.Table)
+	_, err := e.storage.Get(tableKey)
+	if err != nil {
 		return nil, fmt.Errorf("table '%s' does not exist", stmt.Table)
 	}
 
@@ -274,7 +285,9 @@ func (e *Executor) executeDelete(stmt *DeleteStatement) (*QueryResult, error) {
 
 func (e *Executor) executeCreateTable(stmt *CreateTableStatement) (*QueryResult, error) {
 	// Check if table already exists
-	if _, exists := e.tables[stmt.Table]; exists {
+	tableKey := fmt.Sprintf("_table_metadata:%s", stmt.Table)
+	_, err := e.storage.Get(tableKey)
+	if err == nil {
 		return nil, fmt.Errorf("table '%s' already exists", stmt.Table)
 	}
 
@@ -296,8 +309,12 @@ func (e *Executor) executeCreateTable(stmt *CreateTableStatement) (*QueryResult,
 		table.Columns = append(table.Columns, column)
 	}
 
-	// Store table metadata
-	e.tables[stmt.Table] = table
+	// Store table metadata in storage
+	tableData := fmt.Sprintf("table:%s:created:%d", stmt.Table, table.Created.Unix())
+	err = e.storage.Put(tableKey, []byte(tableData))
+	if err != nil {
+		return nil, fmt.Errorf("failed to store table metadata: %w", err)
+	}
 
 	return &QueryResult{
 		Columns: []string{"message"},
@@ -308,7 +325,9 @@ func (e *Executor) executeCreateTable(stmt *CreateTableStatement) (*QueryResult,
 
 func (e *Executor) executeDropTable(stmt *DropTableStatement) (*QueryResult, error) {
 	// Check if table exists
-	if _, exists := e.tables[stmt.Table]; !exists {
+	tableKey := fmt.Sprintf("_table_metadata:%s", stmt.Table)
+	_, err := e.storage.Get(tableKey)
+	if err != nil {
 		return nil, fmt.Errorf("table '%s' does not exist", stmt.Table)
 	}
 
@@ -326,7 +345,7 @@ func (e *Executor) executeDropTable(stmt *DropTableStatement) (*QueryResult, err
 	}
 
 	// Remove table metadata
-	delete(e.tables, stmt.Table)
+	e.storage.Delete(tableKey)
 
 	return &QueryResult{
 		Columns: []string{"message"},

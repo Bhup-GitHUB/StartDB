@@ -231,7 +231,11 @@ func (l *Lexer) readString() string {
 			break
 		}
 	}
-	return l.input[position:l.position]
+	// Consume the closing quote
+	if l.ch == '\'' {
+		l.readChar()
+	}
+	return l.input[position:l.position-1]
 }
 
 func (l *Lexer) readNumber() string {
