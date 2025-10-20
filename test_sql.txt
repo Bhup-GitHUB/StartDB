@@ -1,5 +1,0 @@
-sql CREATE TABLE users (id INTEGER, name TEXT, email TEXT)
-sql INSERT INTO users VALUES (1, 'John', 'john@example.com')
-sql INSERT INTO users VALUES (2, 'Jane', 'jane@example.com')
-sql SELECT * FROM users
-quit

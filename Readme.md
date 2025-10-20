@@ -210,6 +210,27 @@ startdb --storage=disk commit
 startdb --storage=disk rollback
 ```
 
+**With SQL Queries:**
+
+```bash
+# Create a table
+startdb --storage=disk sql "CREATE TABLE users (id INTEGER, name TEXT, email TEXT)"
+
+# Insert data
+startdb --storage=disk sql "INSERT INTO users VALUES (1, 'John Doe', 'john@example.com')"
+startdb --storage=disk sql "INSERT INTO users VALUES (2, 'Jane Smith', 'jane@example.com')"
+
+# Query data
+startdb --storage=disk sql "SELECT * FROM users"
+startdb --storage=disk sql "SELECT * FROM users WHERE id = 1"
+
+# Update data
+startdb --storage=disk sql "UPDATE users SET name = 'John Updated' WHERE id = 1"
+
+# Delete data
+startdb --storage=disk sql "DELETE FROM users WHERE id = 2"
+```
+
 ### Available Commands
 
 - `set <key> <value>` - Store a key-value pair
@@ -223,6 +244,7 @@ startdb --storage=disk rollback
 - `commit` - Commit the current transaction
 - `rollback` - Rollback the current transaction
 - `status` - Show transaction status
+- `sql <query>` - Execute a SQL query
 - `version` - Show version information
 
 ### Storage Options
@@ -232,6 +254,105 @@ startdb --storage=disk rollback
 - `--data=filename.json` - Custom data file path
 - `--wal` - Enable Write-Ahead Logging for crash recovery
 - `--wal-file=filename.wal` - Custom WAL file path
+
+---
+
+## 🧪 Testing the Database
+
+### Interactive Shell Testing
+
+The easiest way to test StartDB is using the interactive shell:
+
+```bash
+# Start the interactive shell
+startdb shell
+
+# Test basic operations
+startdb> set user:1 "John Doe"
+startdb> get user:1
+startdb> list
+
+# Test transactions
+startdb> begin
+startdb> set user:2 "Jane Smith"
+startdb> status
+startdb> commit
+
+# Test SQL queries
+startdb> sql CREATE TABLE users (id INTEGER, name TEXT)
+startdb> sql INSERT INTO users VALUES (1, 'John')
+startdb> sql SELECT * FROM users
+startdb> quit
+```
+
+### Command Line Testing
+
+Test individual commands:
+
+```bash
+# Test basic operations
+startdb set key1 "value1"
+startdb get key1
+startdb list
+
+# Test with disk storage
+startdb --storage=disk set user:1 "John Doe"
+startdb --storage=disk get user:1
+
+# Test with WAL
+startdb --storage=disk --wal set user:1 "John Doe"
+startdb --storage=disk --wal checkpoint
+
+# Test transactions
+startdb begin
+startdb set user:1 "John Doe"
+startdb commit
+
+# Test SQL
+startdb sql "CREATE TABLE users (id INTEGER, name TEXT)"
+startdb sql "INSERT INTO users VALUES (1, 'John')"
+startdb sql "SELECT * FROM users"
+```
+
+### Automated Testing
+
+Create test scripts:
+
+```bash
+# Create a test script
+cat > test_script.txt << EOF
+set user:1 "John Doe"
+set user:2 "Jane Smith"
+list
+begin
+set user:3 "Bob Johnson"
+status
+commit
+sql CREATE TABLE products (id INTEGER, name TEXT)
+sql INSERT INTO products VALUES (1, 'Laptop')
+sql SELECT * FROM products
+quit
+EOF
+
+# Run the test script
+Get-Content test_script.txt | startdb shell
+```
+
+### Performance Testing
+
+Test with larger datasets:
+
+```bash
+# Create a performance test
+for i in {1..1000}; do
+  startdb --storage=disk set "key:$i" "value:$i"
+done
+
+# Test concurrent operations
+startdb --storage=disk begin
+startdb --storage=disk set concurrent:1 "test"
+startdb --storage=disk commit
+```
 
 ---
 

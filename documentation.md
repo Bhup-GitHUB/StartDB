@@ -1,326 +1,261 @@
-# StartDB Testing Documentation
+# StartDB Local Testing Guide
 
-## Overview
+## Quick Start
 
-This document provides comprehensive testing steps for StartDB's Write-Ahead Logging (WAL) functionality. The WAL implementation ensures data durability and crash recovery capabilities.
-
-## Prerequisites
-
-- Go 1.21 or higher
-- Windows, macOS, or Linux
-- StartDB built and ready (`go build -o bin/startdb.exe ./cmd/startdb`)
-
-## Test Categories
-
-### 1. Basic WAL Functionality Tests
-
-#### Test 1.1: Enable WAL with Disk Storage
+### 1. Build the Database
 
 ```bash
-# Test basic WAL operations
-./bin/startdb.exe --storage=disk --wal --data=test_basic.json set user:1 "John Doe"
-./bin/startdb.exe --storage=disk --wal --data=test_basic.json get user:1
-./bin/startdb.exe --storage=disk --wal --data=test_basic.json list
-
-# Expected: Should show user:1 with value "John Doe"
+go build -o bin/startdb ./cmd/startdb
 ```
 
-#### Test 1.2: WAL File Creation
+### 2. Test Basic Operations
 
 ```bash
-# Check if WAL file is created
-ls -la test_basic.json.wal
+# Set a value
+./bin/startdb set user:1 "John Doe"
 
-# Expected: WAL file should exist and contain binary data
+# Get a value
+./bin/startdb get user:1
+
+# List all keys
+./bin/startdb list
+
+# Delete a key
+./bin/startdb delete user:1
 ```
 
-#### Test 1.3: Multiple Operations
+## Interactive Shell Testing
+
+### Start the Shell
 
 ```bash
-# Perform multiple operations
-./bin/startdb.exe --storage=disk --wal --data=test_multi.json set user:1 "John Doe"
-./bin/startdb.exe --storage=disk --wal --data=test_multi.json set user:2 "Jane Smith"
-./bin/startdb.exe --storage=disk --wal --data=test_multi.json delete user:1
-./bin/startdb.exe --storage=disk --wal --data=test_multi.json list
-
-# Expected: Only user:2 should remain
+./bin/startdb shell
 ```
 
-### 2. Crash Recovery Tests
+### Basic Commands in Shell
 
-#### Test 2.1: Simulate Crash and Recovery
+```
+startdb> set user:1 "John Doe"
+startdb> get user:1
+startdb> list
+startdb> exists user:1
+startdb> delete user:1
+startdb> help
+startdb> quit
+```
+
+## Transaction Testing
+
+### Command Line Transactions
 
 ```bash
-# Step 1: Create data with WAL
-./bin/startdb.exe --storage=disk --wal --data=test_crash.json set user:1 "John Doe"
-./bin/startdb.exe --storage=disk --wal --data=test_crash.json set user:2 "Jane Smith"
+# Begin transaction
+./bin/startdb begin
 
-# Step 2: Simulate crash by deleting data file (keep WAL)
-rm test_crash.json
+# Perform operations
+./bin/startdb set user:1 "John Doe"
+./bin/startdb set user:2 "Jane Smith"
 
-# Step 3: Recover using WAL
-./bin/startdb.exe --storage=disk --wal --data=test_crash.json recover
+# Commit transaction
+./bin/startdb commit
 
-# Step 4: Verify data recovery
-./bin/startdb.exe --storage=disk --wal --data=test_crash.json list
-
-# Expected: Both users should be recovered
+# Or rollback
+./bin/startdb rollback
 ```
 
-#### Test 2.2: Partial Crash Recovery
+### Shell Transactions
+
+```
+startdb> begin
+startdb> set user:1 "John Doe"
+startdb> set user:2 "Jane Smith"
+startdb> status
+startdb> commit
+```
+
+## SQL Testing
+
+### Create Tables
 
 ```bash
-# Step 1: Create initial data
-./bin/startdb.exe --storage=disk --wal --data=test_partial.json set user:1 "John Doe"
-
-# Step 2: Add more data
-./bin/startdb.exe --storage=disk --wal --data=test_partial.json set user:2 "Jane Smith"
-./bin/startdb.exe --storage=disk --wal --data=test_partial.json delete user:1
-
-# Step 3: Simulate crash
-rm test_partial.json
-
-# Step 4: Recover
-./bin/startdb.exe --storage=disk --wal --data=test_partial.json recover
-
-# Step 5: Verify
-./bin/startdb.exe --storage=disk --wal --data=test_partial.json get user:2
-
-# Expected: user:2 should exist, user:1 should not
+./bin/startdb sql "CREATE TABLE users (id INTEGER, name TEXT, email TEXT)"
 ```
 
-### 3. Checkpoint Tests
-
-#### Test 3.1: Create Checkpoint
+### Insert Data
 
 ```bash
-# Step 1: Create data
-./bin/startdb.exe --storage=disk --wal --data=test_checkpoint.json set user:1 "John Doe"
-./bin/startdb.exe --storage=disk --wal --data=test_checkpoint.json set user:2 "Jane Smith"
-
-# Step 2: Check WAL file size before checkpoint
-ls -la test_checkpoint.json.wal
-
-# Step 3: Create checkpoint
-./bin/startdb.exe --storage=disk --wal --data=test_checkpoint.json checkpoint
-
-# Step 4: Check WAL file size after checkpoint
-ls -la test_checkpoint.json.wal
-
-# Expected: WAL file should be smaller or empty after checkpoint
+./bin/startdb sql "INSERT INTO users VALUES (1, 'John', 'john@example.com')"
+./bin/startdb sql "INSERT INTO users VALUES (2, 'Jane', 'jane@example.com')"
 ```
 
-#### Test 3.2: Data Persistence After Checkpoint
+### Query Data
 
 ```bash
-# Step 1: Create data and checkpoint
-./bin/startdb.exe --storage=disk --wal --data=test_persist.json set user:1 "John Doe"
-./bin/startdb.exe --storage=disk --wal --data=test_persist.json checkpoint
-
-# Step 2: Verify data still exists
-./bin/startdb.exe --storage=disk --wal --data=test_persist.json get user:1
-
-# Expected: Data should still be accessible
+./bin/startdb sql "SELECT * FROM users"
+./bin/startdb sql "SELECT * FROM users WHERE id = 1"
 ```
 
-### 4. Interactive Shell Tests
-
-#### Test 4.1: WAL Shell Commands
+### Update Data
 
 ```bash
-# Start interactive shell with WAL
-./bin/startdb.exe --storage=disk --wal --data=test_shell.json shell
-
-# In the shell, run these commands:
-# set user:1 "John Doe"
-# wal-status
-# list
-# checkpoint
-# wal-status
-# quit
-
-# Expected: WAL status should show enabled, checkpoint should work
+./bin/startdb sql "UPDATE users SET name = 'John Updated' WHERE id = 1"
 ```
 
-#### Test 4.2: Shell WAL Recovery
+### Delete Data
 
 ```bash
-# Start shell and create data
-./bin/startdb.exe --storage=disk --wal --data=test_shell_recovery.json shell
-
-# In shell:
-# set user:1 "John Doe"
-# set user:2 "Jane Smith"
-# quit
-
-# Simulate crash
-rm test_shell_recovery.json
-
-# Start shell again (should auto-recover)
-./bin/startdb.exe --storage=disk --wal --data=test_shell_recovery.json shell
-
-# In shell:
-# list
-# quit
-
-# Expected: Both users should be recovered automatically
+./bin/startdb sql "DELETE FROM users WHERE id = 2"
 ```
 
-### 5. Memory Engine WAL Tests
+### Shell SQL
 
-#### Test 5.1: Memory Engine with WAL
+```
+startdb> sql CREATE TABLE products (id INTEGER, name TEXT)
+startdb> sql INSERT INTO products VALUES (1, 'Laptop')
+startdb> sql SELECT * FROM products
+```
+
+## Storage Options
+
+### Memory Storage (Default)
 
 ```bash
-# Test memory engine with WAL
-./bin/startdb.exe --storage=memory --wal --wal-file=test_memory.wal set user:1 "John Doe"
-./bin/startdb.exe --storage=memory --wal --wal-file=test_memory.wal get user:1
-
-# Expected: Should work with memory storage
+./bin/startdb set key1 "value1"
+./bin/startdb get key1
 ```
 
-#### Test 5.2: Memory Engine Recovery
+### Disk Storage (Persistent)
 
 ```bash
-# Create data in memory with WAL
-./bin/startdb.exe --storage=memory --wal --wal-file=test_memory_recovery.wal set user:1 "John Doe"
-
-# Restart and recover
-./bin/startdb.exe --storage=memory --wal --wal-file=test_memory_recovery.wal recover
-./bin/startdb.exe --storage=memory --wal --wal-file=test_memory_recovery.wal get user:1
-
-# Expected: Data should be recovered from WAL
+./bin/startdb --storage=disk set user:1 "John Doe"
+./bin/startdb --storage=disk get user:1
 ```
 
-### 6. Error Handling Tests
-
-#### Test 6.1: Invalid WAL File
+### Custom Data File
 
 ```bash
-# Create corrupted WAL file
-echo "corrupted data" > test_corrupted.wal
-
-# Try to use corrupted WAL
-./bin/startdb.exe --storage=disk --wal --wal-file=test_corrupted.wal --data=test_corrupted.json get user:1
-
-# Expected: Should handle corruption gracefully
+./bin/startdb --storage=disk --data=my_db.json set key1 "value1"
+./bin/startdb --storage=disk --data=my_db.json get key1
 ```
 
-#### Test 6.2: WAL Without Storage
+## WAL (Write-Ahead Logging) Testing
+
+### Enable WAL
 
 ```bash
-# Try to use WAL commands without WAL enabled
-./bin/startdb.exe --storage=disk --data=test_no_wal.json checkpoint
-
-# Expected: Should show error about WAL not being enabled
+./bin/startdb --storage=disk --wal set user:1 "John Doe"
+./bin/startdb --storage=disk --wal get user:1
 ```
 
-### 7. Performance Tests
-
-#### Test 7.1: Large Dataset WAL
+### Crash Recovery
 
 ```bash
-# Create large dataset with WAL
-for i in {1..100}; do
-    ./bin/startdb.exe --storage=disk --wal --data=test_large.json set "key$i" "value$i"
-done
+# Create data with WAL
+./bin/startdb --storage=disk --wal --data=test.json set user:1 "John Doe"
 
-# Check WAL file size
-ls -la test_large.json.wal
+# Simulate crash (delete data file)
+rm test.json
 
-# Create checkpoint
-./bin/startdb.exe --storage=disk --wal --data=test_large.json checkpoint
-
-# Verify all data exists
-./bin/startdb.exe --storage=disk --wal --data=test_large.json list | wc -l
-
-# Expected: Should show 100 keys
+# Recover from WAL
+./bin/startdb --storage=disk --wal --data=test.json recover
+./bin/startdb --storage=disk --wal --data=test.json get user:1
 ```
 
-### 8. Concurrent Access Tests
-
-#### Test 8.1: Multiple Processes
+### Checkpoint
 
 ```bash
-# Terminal 1: Start shell
-./bin/startdb.exe --storage=disk --wal --data=test_concurrent.json shell
-
-# Terminal 2: Use command line
-./bin/startdb.exe --storage=disk --wal --data=test_concurrent.json set user:1 "John Doe"
-
-# Expected: Both should work without conflicts
+./bin/startdb --storage=disk --wal --data=test.json checkpoint
 ```
 
-## Test Cleanup
+## Complete Test Script
 
-After testing, clean up test files:
+Create `test_script.txt`:
+
+```
+set user:1 "John Doe"
+set user:2 "Jane Smith"
+list
+begin
+set user:3 "Bob Johnson"
+status
+commit
+sql CREATE TABLE users (id INTEGER, name TEXT)
+sql INSERT INTO users VALUES (1, 'John')
+sql SELECT * FROM users
+quit
+```
+
+Run the script:
 
 ```bash
-# Remove all test files
-rm -f test_*.json test_*.wal
+Get-Content test_script.txt | ./bin/startdb shell
 ```
 
-## Expected Results Summary
+## All Available Commands
 
-| Test Category     | Expected Outcome                      |
-| ----------------- | ------------------------------------- |
-| Basic WAL         | All operations logged and recoverable |
-| Crash Recovery    | Data fully recovered from WAL         |
-| Checkpoint        | WAL truncated, data preserved         |
-| Interactive Shell | WAL commands work in shell            |
-| Memory Engine     | WAL works with memory storage         |
-| Error Handling    | Graceful error handling               |
-| Performance       | Efficient WAL operations              |
-| Concurrent Access | No data corruption                    |
+### Basic Operations
+
+- `set <key> <value>` - Store a key-value pair
+- `get <key>` - Retrieve a value by key
+- `delete <key>` - Remove a key-value pair
+- `exists <key>` - Check if a key exists
+- `list` - List all keys
+
+### Transactions
+
+- `begin` - Start a new transaction
+- `commit` - Commit the current transaction
+- `rollback` - Rollback the current transaction
+- `status` - Show transaction status
+
+### SQL
+
+- `sql <query>` - Execute a SQL query
+
+### Storage
+
+- `checkpoint` - Create a checkpoint (WAL only)
+- `recover` - Recover from crash (WAL only)
+
+### System
+
+- `version` - Show version information
+- `help` - Show help (in shell)
+
+## Command Line Options
+
+- `--storage=memory` - Use memory storage (default)
+- `--storage=disk` - Use disk storage
+- `--data=filename.json` - Custom data file
+- `--wal` - Enable Write-Ahead Logging
+- `--wal-file=filename.wal` - Custom WAL file
+
+## Quick Test Checklist
+
+- [ ] Basic CRUD operations work
+- [ ] Transactions work (begin/commit/rollback)
+- [ ] SQL queries work (CREATE/INSERT/SELECT)
+- [ ] Disk storage persists data
+- [ ] WAL recovery works
+- [ ] Shell commands work
+- [ ] Help system works
 
 ## Troubleshooting
 
-### Common Issues
+**Command not found**: Make sure you built the database with `go build`
 
-1. **WAL file not created**: Ensure `--wal` flag is used
-2. **Recovery fails**: Check WAL file permissions and corruption
-3. **Checkpoint fails**: Ensure WAL is enabled
-4. **Shell commands not working**: Verify WAL is enabled in shell
+**Permission denied**: Check file permissions for data files
 
-### Debug Commands
+**SQL errors**: Ensure table exists before inserting data
 
-```bash
-# Check WAL file contents (binary)
-hexdump -C test_file.wal
+**WAL errors**: Make sure `--wal` flag is used consistently
 
-# Check file permissions
-ls -la test_file.wal
+## Clean Up
 
-# Verify data file
-cat test_file.json
-```
-
-## Test Automation
-
-For automated testing, create a test script:
+Remove test files:
 
 ```bash
-#!/bin/bash
-# test_wal.sh
-
-echo "Starting WAL tests..."
-
-# Run all tests
-echo "Test 1: Basic WAL functionality"
-./bin/startdb.exe --storage=disk --wal --data=test1.json set user:1 "John Doe"
-./bin/startdb.exe --storage=disk --wal --data=test1.json get user:1
-
-echo "Test 2: Crash recovery"
-rm test1.json
-./bin/startdb.exe --storage=disk --wal --data=test1.json recover
-./bin/startdb.exe --storage=disk --wal --data=test1.json get user:1
-
-echo "Test 3: Checkpoint"
-./bin/startdb.exe --storage=disk --wal --data=test1.json checkpoint
-
-# Cleanup
-rm -f test1.json test1.json.wal
-
-echo "All tests completed!"
+rm -f test*.json test*.wal
 ```
 
-This documentation provides comprehensive testing coverage for all WAL functionality in StartDB.
+That's it! You now know how to test StartDB locally. 🚀
