@@ -7,6 +7,8 @@ import (
 	"sort"
 	"strings"
 
+	"startdb/internal/sql"
+
 	"github.com/spf13/cobra"
 )
 
@@ -281,6 +283,69 @@ Type 'help' for available commands, 'quit' to exit.`,
 					fmt.Printf("  DELETE %s\n", key)
 				}
 
+			case "sql":
+				if len(parts) < 2 {
+					fmt.Println("Usage: sql <query>")
+					continue
+				}
+				
+				// Join all parts after "sql" to form the complete query
+				query := strings.Join(parts[1:], " ")
+				
+				// Parse the SQL query
+				parser := sql.NewParser(query)
+				stmt, err := parser.Parse()
+				if err != nil {
+					fmt.Printf("SQL Parse Error: %v\n", err)
+					continue
+				}
+
+				// Create SQL executor
+				executor := sql.NewExecutor(db)
+
+				// Execute the statement
+				result, err := executor.Execute(stmt)
+				if err != nil {
+					fmt.Printf("SQL Execution Error: %v\n", err)
+					continue
+				}
+
+				// Display results
+				if result.Count > 0 {
+					// Print column headers
+					for i, col := range result.Columns {
+						if i > 0 {
+							fmt.Print(" | ")
+						}
+						fmt.Print(col)
+					}
+					fmt.Println()
+
+					// Print separator
+					for i, col := range result.Columns {
+						if i > 0 {
+							fmt.Print("-+-")
+						}
+						for j := 0; j < len(col); j++ {
+							fmt.Print("-")
+						}
+					}
+					fmt.Println()
+
+					// Print rows
+					for _, row := range result.Rows {
+						for i, value := range row {
+							if i > 0 {
+								fmt.Print(" | ")
+							}
+							fmt.Print(value)
+						}
+						fmt.Println()
+					}
+				}
+
+				fmt.Printf("\nQuery executed successfully. %d row(s) returned.\n", result.Count)
+
 			default:
 				fmt.Printf("Unknown command: %s (type 'help' for available commands)\n", command)
 			}
@@ -300,6 +365,7 @@ func printHelp() {
 	fmt.Println("  commit               - Commit the current transaction")
 	fmt.Println("  rollback             - Rollback the current transaction")
 	fmt.Println("  status               - Show transaction status")
+	fmt.Println("  sql <query>          - Execute a SQL query")
 	if walEnabled {
 		fmt.Println("  checkpoint           - Create a checkpoint (truncate WAL)")
 		fmt.Println("  recover              - Recover from crash (replay WAL)")

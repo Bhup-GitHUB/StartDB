@@ -55,6 +55,7 @@ func init() {
 	rootCmd.AddCommand(commitCmd)
 	rootCmd.AddCommand(rollbackCmd)
 	rootCmd.AddCommand(statusCmd)
+	rootCmd.AddCommand(sqlCmd)
 }
 
 func initStorage() error {
