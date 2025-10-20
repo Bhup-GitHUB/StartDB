@@ -377,6 +377,9 @@ func (p *Parser) parseUnaryExpression() (Expression, error) {
 		default:
 			return nil, fmt.Errorf("unexpected keyword: %s", token.Literal)
 		}
+	case TokenAsterisk:
+		p.lexer.Next()
+		return &Identifier{Value: "*"}, nil
 	case TokenLeftParen:
 		p.lexer.Next() // consume (
 		expr, err := p.parseExpression()
@@ -508,7 +511,11 @@ func (p *Parser) parseColumnDefinitions() ([]ColumnDefinition, error) {
 
 func (p *Parser) expectKeyword(keyword string) bool {
 	token := p.lexer.Peek()
-	return token.Type == TokenKeyword && strings.ToUpper(token.Literal) == strings.ToUpper(keyword)
+	if token.Type == TokenKeyword && strings.ToUpper(token.Literal) == strings.ToUpper(keyword) {
+		p.lexer.Next()
+		return true
+	}
+	return false
 }
 
 func (p *Parser) expectToken(tokenType TokenType) bool {

@@ -92,7 +92,7 @@ func (e *Executor) executeSelect(stmt *SelectStatement) (*QueryResult, error) {
 		sort.Slice(rows, func(i, j int) bool {
 			// Simple ordering by first column for now
 			if len(rows[i]) > 0 && len(rows[j]) > 0 {
-				return e.compareValues(rows[i][0], rows[j][0])
+				return e.compareValues(rows[i][0], rows[j][0]) < 0
 			}
 			return false
 		})

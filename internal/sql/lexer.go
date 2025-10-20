@@ -183,7 +183,11 @@ func (l *Lexer) Peek() Token {
 	l.readPosition = pos + 1
 	l.line = line
 	l.column = column
-	l.ch = l.input[pos]
+	if pos < len(l.input) {
+		l.ch = l.input[pos]
+	} else {
+		l.ch = 0
+	}
 
 	return tok
 }
