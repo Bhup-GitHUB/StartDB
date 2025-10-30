@@ -1,12 +1,13 @@
 package cli
 
 import (
-	"fmt"
-	"os"
+    "fmt"
+    "os"
+    "strings"
 
-	"startdb/internal/storage"
+    "startdb/internal/storage"
 
-	"github.com/spf13/cobra"
+    "github.com/spf13/cobra"
 )
 
 var (
@@ -27,6 +28,29 @@ from usage patterns and optimizes itself automatically.
 Unlike traditional databases that require manual tuning, StartDB uses AI to 
 predict query patterns, manage indexes, and adapt to workload changes in real-time.`,
 	Version: "1.0.0",
+    PersistentPreRun: func(cmd *cobra.Command, args []string) {
+        if !cmd.Flags().Changed("storage") {
+            if v := os.Getenv("STARTDB_STORAGE"); v != "" {
+                storageType = v
+            }
+        }
+        if !cmd.Flags().Changed("data") {
+            if v := os.Getenv("STARTDB_DATA"); v != "" {
+                dataFile = v
+            }
+        }
+        if !cmd.Flags().Changed("wal") {
+            if v := os.Getenv("STARTDB_WAL"); v != "" {
+                lv := strings.ToLower(v)
+                walEnabled = v == "1" || lv == "true" || lv == "yes" || lv == "on"
+            }
+        }
+        if !cmd.Flags().Changed("wal-file") {
+            if v := os.Getenv("STARTDB_WAL_FILE"); v != "" {
+                walFile = v
+            }
+        }
+    },
 }
 
 func Execute() {
