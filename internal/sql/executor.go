@@ -42,43 +42,66 @@ func (e *Executor) Execute(stmt Statement) (*QueryResult, error) {
 }
 
 func (e *Executor) executeSelect(stmt *SelectStatement) (*QueryResult, error) {
-	// Check if table exists
 	tableKey := fmt.Sprintf("_table_metadata:%s", stmt.Table)
 	_, err := e.storage.Get(tableKey)
 	if err != nil {
 		return nil, fmt.Errorf("table '%s' does not exist", stmt.Table)
 	}
 
-	// Get all data for the table
+	var rows [][]interface{}
+	tablePrefix := stmt.Table + ":"
+	indexManager := e.storage.GetIndexManager()
+
+	var candidateKeys []string
+
+	if stmt.Where != nil {
+		columnName, columnValue, canUseIndex := e.extractIndexableColumn(stmt.Where)
+		if canUseIndex && columnName != "" && columnValue != nil {
+			indexName := fmt.Sprintf("%s_%s_%s", stmt.Table, columnName, "idx")
+			if indexManager.Exists(indexName) {
+				indexKey := fmt.Sprintf("%v", columnValue)
+				rowKey, found := indexManager.Search(indexName, indexKey)
+				if found {
+					keyStr := string(rowKey)
+					if strings.HasPrefix(keyStr, tablePrefix) {
+						value, err := e.storage.Get(keyStr)
+						if err == nil {
+							rowData, err := e.parseRowData(string(value))
+							if err == nil {
+								matches, err := e.evaluateWhere(rowData, stmt.Where)
+								if err == nil && matches {
+									rows = append(rows, rowData)
+								}
+							}
+						}
+					}
+					goto applyClauses
+				}
+			}
+		}
+	}
+
 	keys, err := e.storage.Keys()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get keys: %w", err)
 	}
+	candidateKeys = keys
 
-	var rows [][]interface{}
-	tablePrefix := stmt.Table + ":"
-
-	// Filter keys for this table
-	for _, key := range keys {
+	for _, key := range candidateKeys {
 		if strings.HasPrefix(key, tablePrefix) {
 			value, err := e.storage.Get(key)
 			if err != nil {
 				continue
 			}
 
-			// Parse the stored data
 			rowData, err := e.parseRowData(string(value))
 			if err != nil {
 				continue
 			}
 
-			// Apply WHERE clause if present
 			if stmt.Where != nil {
 				matches, err := e.evaluateWhere(rowData, stmt.Where)
-				if err != nil {
-					continue
-				}
-				if !matches {
+				if err != nil || !matches {
 					continue
 				}
 			}
@@ -87,10 +110,9 @@ func (e *Executor) executeSelect(stmt *SelectStatement) (*QueryResult, error) {
 		}
 	}
 
-	// Apply ORDER BY if present
+applyClauses:
 	if len(stmt.OrderBy) > 0 {
 		sort.Slice(rows, func(i, j int) bool {
-			// Simple ordering by first column for now
 			if len(rows[i]) > 0 && len(rows[j]) > 0 {
 				return e.compareValues(rows[i][0], rows[j][0]) < 0
 			}
@@ -98,15 +120,12 @@ func (e *Executor) executeSelect(stmt *SelectStatement) (*QueryResult, error) {
 		})
 	}
 
-	// Apply LIMIT if present
 	if stmt.Limit > 0 && stmt.Limit < len(rows) {
 		rows = rows[:stmt.Limit]
 	}
 
-	// Determine columns
 	columns := []string{"id"}
 	if len(rows) > 0 {
-		// Get columns from first row
 		for i := 1; i < len(rows[0]); i += 2 {
 			if i+1 < len(rows[0]) {
 				columns = append(columns, rows[0][i].(string))
@@ -171,13 +190,13 @@ func (e *Executor) executeInsert(stmt *InsertStatement) (*QueryResult, error) {
 			rowData = append(rowData, columnName, e.evaluateExpression(value))
 		}
 
-		// Store the row
 		rowStr := e.serializeRowData(rowData)
 		err = e.storage.Put(key, []byte(rowStr))
 		if err != nil {
 			return nil, fmt.Errorf("failed to insert row: %w", err)
 		}
 
+		e.updateIndexesOnInsert(stmt.Table, key, rowData)
 		insertedCount++
 	}
 
@@ -228,7 +247,6 @@ func (e *Executor) executeUpdate(stmt *UpdateStatement) (*QueryResult, error) {
 				}
 			}
 
-			// Update the row
 			updatedRowData := e.updateRowData(rowData, stmt.Set)
 			updatedRowStr := e.serializeRowData(updatedRowData)
 			err = e.storage.Put(key, []byte(updatedRowStr))
@@ -236,6 +254,7 @@ func (e *Executor) executeUpdate(stmt *UpdateStatement) (*QueryResult, error) {
 				return nil, fmt.Errorf("failed to update row: %w", err)
 			}
 
+			e.updateIndexesOnUpdate(stmt.Table, key, rowData, updatedRowData)
 			updatedCount++
 		}
 	}
