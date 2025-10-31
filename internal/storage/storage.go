@@ -3,12 +3,14 @@ package storage
 type Storage struct {
 	engine Engine
 	txManager *TransactionManager
+	indexManager *IndexManager
 }
 
 func New(engine Engine) *Storage {
 	return &Storage{
 		engine: engine,
 		txManager: NewTransactionManager(),
+		indexManager: NewIndexManager(),
 	}
 }
 
@@ -52,4 +54,8 @@ func (s *Storage) AbortTransaction(tx *Transaction) error {
 		return err
 	}
 	return s.txManager.AbortTransaction(tx.ID)
+}
+
+func (s *Storage) GetIndexManager() *IndexManager {
+	return s.indexManager
 }
