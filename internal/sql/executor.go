@@ -51,8 +51,7 @@ func (e *Executor) executeSelect(stmt *SelectStatement) (*QueryResult, error) {
 	var rows [][]interface{}
 	tablePrefix := stmt.Table + ":"
 	indexManager := e.storage.GetIndexManager()
-
-	var candidateKeys []string
+	usedIndex := false
 
 	if stmt.Where != nil {
 		columnName, columnValue, canUseIndex := e.extractIndexableColumn(stmt.Where)
@@ -71,46 +70,46 @@ func (e *Executor) executeSelect(stmt *SelectStatement) (*QueryResult, error) {
 								matches, err := e.evaluateWhere(rowData, stmt.Where)
 								if err == nil && matches {
 									rows = append(rows, rowData)
+									usedIndex = true
 								}
 							}
 						}
 					}
-					goto applyClauses
 				}
 			}
 		}
 	}
 
-	keys, err := e.storage.Keys()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get keys: %w", err)
-	}
-	candidateKeys = keys
+	if !usedIndex {
+		keys, err := e.storage.Keys()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get keys: %w", err)
+		}
 
-	for _, key := range candidateKeys {
-		if strings.HasPrefix(key, tablePrefix) {
-			value, err := e.storage.Get(key)
-			if err != nil {
-				continue
-			}
-
-			rowData, err := e.parseRowData(string(value))
-			if err != nil {
-				continue
-			}
-
-			if stmt.Where != nil {
-				matches, err := e.evaluateWhere(rowData, stmt.Where)
-				if err != nil || !matches {
+		for _, key := range keys {
+			if strings.HasPrefix(key, tablePrefix) {
+				value, err := e.storage.Get(key)
+				if err != nil {
 					continue
 				}
-			}
 
-			rows = append(rows, rowData)
+				rowData, err := e.parseRowData(string(value))
+				if err != nil {
+					continue
+				}
+
+				if stmt.Where != nil {
+					matches, err := e.evaluateWhere(rowData, stmt.Where)
+					if err != nil || !matches {
+						continue
+					}
+				}
+
+				rows = append(rows, rowData)
+			}
 		}
 	}
 
-applyClauses:
 	if len(stmt.OrderBy) > 0 {
 		sort.Slice(rows, func(i, j int) bool {
 			if len(rows[i]) > 0 && len(rows[j]) > 0 {
@@ -306,12 +305,12 @@ func (e *Executor) executeDelete(stmt *DeleteStatement) (*QueryResult, error) {
 				}
 			}
 
-			// Delete the row
 			err = e.storage.Delete(key)
 			if err != nil {
 				return nil, fmt.Errorf("failed to delete row: %w", err)
 			}
 
+			e.updateIndexesOnDelete(stmt.Table, key, rowData)
 			deletedCount++
 		}
 	}
@@ -566,4 +565,101 @@ func (e *Executor) updateRowData(rowData []interface{}, setMap map[string]Expres
 	}
 
 	return newRowData
+}
+
+func (e *Executor) extractIndexableColumn(where Expression) (string, interface{}, bool) {
+	switch w := where.(type) {
+	case *BinaryExpression:
+		if w.Operator == "=" {
+			leftIdent, okLeft := w.Left.(*Identifier)
+			if okLeft {
+				rightVal := e.evaluateExpression(w.Right)
+				if rightVal != nil {
+					return leftIdent.Value, rightVal, true
+				}
+			}
+			rightIdent, okRight := w.Right.(*Identifier)
+			if okRight {
+				leftVal := e.evaluateExpression(w.Left)
+				if leftVal != nil {
+					return rightIdent.Value, leftVal, true
+				}
+			}
+		}
+	}
+	return "", nil, false
+}
+
+func (e *Executor) updateIndexesOnInsert(tableName, rowKey string, rowData []interface{}) {
+	indexManager := e.storage.GetIndexManager()
+	indexNames := indexManager.ListIndexes()
+
+	for _, indexName := range indexNames {
+		if strings.HasPrefix(indexName, fmt.Sprintf("%s_", tableName)) && strings.HasSuffix(indexName, "_idx") {
+			parts := strings.Split(indexName, "_")
+			if len(parts) >= 2 {
+				columnName := parts[1]
+				columnValue := e.findColumnValue(rowData, columnName)
+				if columnValue != nil {
+					indexKey := fmt.Sprintf("%v", columnValue)
+					indexManager.Insert(indexName, indexKey, []byte(rowKey))
+				}
+			}
+		}
+	}
+}
+
+func (e *Executor) updateIndexesOnUpdate(tableName, rowKey string, oldRowData, newRowData []interface{}) {
+	indexManager := e.storage.GetIndexManager()
+	indexNames := indexManager.ListIndexes()
+
+	for _, indexName := range indexNames {
+		if strings.HasPrefix(indexName, fmt.Sprintf("%s_", tableName)) && strings.HasSuffix(indexName, "_idx") {
+			parts := strings.Split(indexName, "_")
+			if len(parts) >= 2 {
+				columnName := parts[1]
+				oldValue := e.findColumnValue(oldRowData, columnName)
+				newValue := e.findColumnValue(newRowData, columnName)
+
+				if oldValue != nil {
+					oldIndexKey := fmt.Sprintf("%v", oldValue)
+					indexManager.Delete(indexName, oldIndexKey)
+				}
+				if newValue != nil {
+					newIndexKey := fmt.Sprintf("%v", newValue)
+					indexManager.Insert(indexName, newIndexKey, []byte(rowKey))
+				}
+			}
+		}
+	}
+}
+
+func (e *Executor) updateIndexesOnDelete(tableName, rowKey string, rowData []interface{}) {
+	indexManager := e.storage.GetIndexManager()
+	indexNames := indexManager.ListIndexes()
+
+	for _, indexName := range indexNames {
+		if strings.HasPrefix(indexName, fmt.Sprintf("%s_", tableName)) && strings.HasSuffix(indexName, "_idx") {
+			parts := strings.Split(indexName, "_")
+			if len(parts) >= 2 {
+				columnName := parts[1]
+				columnValue := e.findColumnValue(rowData, columnName)
+				if columnValue != nil {
+					indexKey := fmt.Sprintf("%v", columnValue)
+					indexManager.Delete(indexName, indexKey)
+				}
+			}
+		}
+	}
+}
+
+func (e *Executor) findColumnValue(rowData []interface{}, columnName string) interface{} {
+	for i := 1; i < len(rowData); i += 2 {
+		if i+1 < len(rowData) {
+			if rowData[i] == columnName {
+				return rowData[i+1]
+			}
+		}
+	}
+	return nil
 }
