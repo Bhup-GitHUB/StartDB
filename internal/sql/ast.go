@@ -101,6 +101,28 @@ func (d *DropTableStatement) String() string {
 	return "DROP TABLE statement"
 }
 
+// CreateIndexStatement represents a CREATE INDEX statement
+type CreateIndexStatement struct {
+	IndexName string
+	Table     string
+	Column    string
+}
+
+func (c *CreateIndexStatement) statementNode() {}
+func (c *CreateIndexStatement) String() string {
+	return "CREATE INDEX statement"
+}
+
+// DropIndexStatement represents a DROP INDEX statement
+type DropIndexStatement struct {
+	IndexName string
+}
+
+func (d *DropIndexStatement) statementNode() {}
+func (d *DropIndexStatement) String() string {
+	return "DROP INDEX statement"
+}
+
 // Expression types
 
 // Identifier represents a column or table name

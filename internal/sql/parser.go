@@ -239,22 +239,35 @@ func (p *Parser) parseDeleteStatement() (*DeleteStatement, error) {
 	return stmt, nil
 }
 
-func (p *Parser) parseCreateStatement() (*CreateTableStatement, error) {
+func (p *Parser) parseCreateStatement() (Statement, error) {
+	nextToken := p.lexer.Peek()
+	if nextToken.Type != TokenKeyword {
+		return nil, fmt.Errorf("expected TABLE or INDEX after CREATE")
+	}
+
+	switch strings.ToUpper(nextToken.Literal) {
+	case "TABLE":
+		return p.parseCreateTable()
+	case "INDEX":
+		return p.parseCreateIndex()
+	default:
+		return nil, fmt.Errorf("expected TABLE or INDEX after CREATE")
+	}
+}
+
+func (p *Parser) parseCreateTable() (*CreateTableStatement, error) {
 	stmt := &CreateTableStatement{}
 
-	// Parse TABLE
 	if !p.expectKeyword("TABLE") {
 		return nil, fmt.Errorf("expected TABLE")
 	}
 
-	// Parse table name
 	tableToken := p.lexer.Next()
 	if tableToken.Type != TokenIdentifier {
 		return nil, fmt.Errorf("expected table name")
 	}
 	stmt.Table = tableToken.Literal
 
-	// Parse column definitions
 	if !p.expectToken(TokenLeftParen) {
 		return nil, fmt.Errorf("expected (")
 	}
@@ -272,20 +285,90 @@ func (p *Parser) parseCreateStatement() (*CreateTableStatement, error) {
 	return stmt, nil
 }
 
-func (p *Parser) parseDropStatement() (*DropTableStatement, error) {
-	stmt := &DropTableStatement{}
+func (p *Parser) parseCreateIndex() (*CreateIndexStatement, error) {
+	stmt := &CreateIndexStatement{}
 
-	// Parse TABLE
-	if !p.expectKeyword("TABLE") {
-		return nil, fmt.Errorf("expected TABLE")
+	if !p.expectKeyword("INDEX") {
+		return nil, fmt.Errorf("expected INDEX")
 	}
 
-	// Parse table name
+	indexToken := p.lexer.Next()
+	if indexToken.Type != TokenIdentifier {
+		return nil, fmt.Errorf("expected index name")
+	}
+	stmt.IndexName = indexToken.Literal
+
+	if !p.expectKeyword("ON") {
+		return nil, fmt.Errorf("expected ON")
+	}
+
 	tableToken := p.lexer.Next()
 	if tableToken.Type != TokenIdentifier {
 		return nil, fmt.Errorf("expected table name")
 	}
 	stmt.Table = tableToken.Literal
+
+	if !p.expectToken(TokenLeftParen) {
+		return nil, fmt.Errorf("expected (")
+	}
+
+	columnToken := p.lexer.Next()
+	if columnToken.Type != TokenIdentifier {
+		return nil, fmt.Errorf("expected column name")
+	}
+	stmt.Column = columnToken.Literal
+
+	if !p.expectToken(TokenRightParen) {
+		return nil, fmt.Errorf("expected )")
+	}
+
+	return stmt, nil
+}
+
+func (p *Parser) parseDropStatement() (Statement, error) {
+	nextToken := p.lexer.Peek()
+	if nextToken.Type != TokenKeyword {
+		return nil, fmt.Errorf("expected TABLE or INDEX after DROP")
+	}
+
+	switch strings.ToUpper(nextToken.Literal) {
+	case "TABLE":
+		return p.parseDropTable()
+	case "INDEX":
+		return p.parseDropIndex()
+	default:
+		return nil, fmt.Errorf("expected TABLE or INDEX after DROP")
+	}
+}
+
+func (p *Parser) parseDropTable() (*DropTableStatement, error) {
+	stmt := &DropTableStatement{}
+
+	if !p.expectKeyword("TABLE") {
+		return nil, fmt.Errorf("expected TABLE")
+	}
+
+	tableToken := p.lexer.Next()
+	if tableToken.Type != TokenIdentifier {
+		return nil, fmt.Errorf("expected table name")
+	}
+	stmt.Table = tableToken.Literal
+
+	return stmt, nil
+}
+
+func (p *Parser) parseDropIndex() (*DropIndexStatement, error) {
+	stmt := &DropIndexStatement{}
+
+	if !p.expectKeyword("INDEX") {
+		return nil, fmt.Errorf("expected INDEX")
+	}
+
+	indexToken := p.lexer.Next()
+	if indexToken.Type != TokenIdentifier {
+		return nil, fmt.Errorf("expected index name")
+	}
+	stmt.IndexName = indexToken.Literal
 
 	return stmt, nil
 }

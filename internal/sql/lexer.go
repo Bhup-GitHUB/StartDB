@@ -292,6 +292,10 @@ func lookupIdent(ident string) TokenType {
 		return TokenKeyword
 	case "DROP":
 		return TokenKeyword
+	case "INDEX":
+		return TokenKeyword
+	case "ON":
+		return TokenKeyword
 	case "ORDER":
 		return TokenKeyword
 	case "BY":

@@ -36,6 +36,10 @@ func (e *Executor) Execute(stmt Statement) (*QueryResult, error) {
 		return e.executeCreateTable(s)
 	case *DropTableStatement:
 		return e.executeDropTable(s)
+	case *CreateIndexStatement:
+		return e.executeCreateIndex(s)
+	case *DropIndexStatement:
+		return e.executeDropIndex(s)
 	default:
 		return nil, fmt.Errorf("unsupported statement type: %T", stmt)
 	}
@@ -57,9 +61,26 @@ func (e *Executor) executeSelect(stmt *SelectStatement) (*QueryResult, error) {
 		columnName, columnValue, canUseIndex := e.extractIndexableColumn(stmt.Where)
 		if canUseIndex && columnName != "" && columnValue != nil {
 			indexName := fmt.Sprintf("%s_%s_%s", stmt.Table, columnName, "idx")
-			if indexManager.Exists(indexName) {
+			allIndexes := indexManager.ListIndexes()
+			foundIndex := ""
+			for _, idx := range allIndexes {
+				if idx == indexName {
+					foundIndex = idx
+					break
+				}
+				indexMetadataKey := fmt.Sprintf("_index_metadata:%s", idx)
+				indexMetadata, err := e.storage.Get(indexMetadataKey)
+				if err == nil {
+					metadata := string(indexMetadata)
+					if strings.Contains(metadata, fmt.Sprintf("table:%s", stmt.Table)) && strings.Contains(metadata, fmt.Sprintf("column:%s", columnName)) {
+						foundIndex = idx
+						break
+					}
+				}
+			}
+			if foundIndex != "" {
 				indexKey := fmt.Sprintf("%v", columnValue)
-				rowKey, found := indexManager.Search(indexName, indexKey)
+				rowKey, found := indexManager.Search(foundIndex, indexKey)
 				if found {
 					keyStr := string(rowKey)
 					if strings.HasPrefix(keyStr, tablePrefix) {
@@ -387,12 +408,97 @@ func (e *Executor) executeDropTable(stmt *DropTableStatement) (*QueryResult, err
 		}
 	}
 
-	// Remove table metadata
 	e.storage.Delete(tableKey)
 
 	return &QueryResult{
 		Columns: []string{"message"},
 		Rows:    [][]interface{}{{"Table dropped successfully"}},
+		Count:   1,
+	}, nil
+}
+
+func (e *Executor) executeCreateIndex(stmt *CreateIndexStatement) (*QueryResult, error) {
+	tableKey := fmt.Sprintf("_table_metadata:%s", stmt.Table)
+	_, err := e.storage.Get(tableKey)
+	if err != nil {
+		return nil, fmt.Errorf("table '%s' does not exist", stmt.Table)
+	}
+
+	indexManager := e.storage.GetIndexManager()
+
+	if indexManager.Exists(stmt.IndexName) {
+		return nil, fmt.Errorf("index '%s' already exists", stmt.IndexName)
+	}
+
+	err = indexManager.CreateIndex(stmt.IndexName, 3)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create index: %w", err)
+	}
+
+	indexMetadataKey := fmt.Sprintf("_index_metadata:%s", stmt.IndexName)
+	indexMetadata := fmt.Sprintf("table:%s:column:%s", stmt.Table, stmt.Column)
+	err = e.storage.Put(indexMetadataKey, []byte(indexMetadata))
+	if err != nil {
+		indexManager.DropIndex(stmt.IndexName)
+		return nil, fmt.Errorf("failed to store index metadata: %w", err)
+	}
+
+	keys, err := e.storage.Keys()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get keys: %w", err)
+	}
+
+	tablePrefix := stmt.Table + ":"
+	indexedCount := 0
+
+	for _, key := range keys {
+		if strings.HasPrefix(key, tablePrefix) {
+			value, err := e.storage.Get(key)
+			if err != nil {
+				continue
+			}
+
+			rowData, err := e.parseRowData(string(value))
+			if err != nil {
+				continue
+			}
+
+			columnValue := e.findColumnValue(rowData, stmt.Column)
+			if columnValue != nil {
+				indexKey := fmt.Sprintf("%v", columnValue)
+				err = indexManager.Insert(stmt.IndexName, indexKey, []byte(key))
+				if err == nil {
+					indexedCount++
+				}
+			}
+		}
+	}
+
+	return &QueryResult{
+		Columns: []string{"message"},
+		Rows:    [][]interface{}{{fmt.Sprintf("Index '%s' created successfully on %s.%s (%d rows indexed)", stmt.IndexName, stmt.Table, stmt.Column, indexedCount)}},
+		Count:   1,
+	}, nil
+}
+
+func (e *Executor) executeDropIndex(stmt *DropIndexStatement) (*QueryResult, error) {
+	indexManager := e.storage.GetIndexManager()
+
+	if !indexManager.Exists(stmt.IndexName) {
+		return nil, fmt.Errorf("index '%s' does not exist", stmt.IndexName)
+	}
+
+	err := indexManager.DropIndex(stmt.IndexName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to drop index: %w", err)
+	}
+
+	indexMetadataKey := fmt.Sprintf("_index_metadata:%s", stmt.IndexName)
+	e.storage.Delete(indexMetadataKey)
+
+	return &QueryResult{
+		Columns: []string{"message"},
+		Rows:    [][]interface{}{{fmt.Sprintf("Index '%s' dropped successfully", stmt.IndexName)}},
 		Count:   1,
 	}, nil
 }
@@ -595,15 +701,31 @@ func (e *Executor) updateIndexesOnInsert(tableName, rowKey string, rowData []int
 	indexNames := indexManager.ListIndexes()
 
 	for _, indexName := range indexNames {
-		if strings.HasPrefix(indexName, fmt.Sprintf("%s_", tableName)) && strings.HasSuffix(indexName, "_idx") {
-			parts := strings.Split(indexName, "_")
-			if len(parts) >= 2 {
-				columnName := parts[1]
-				columnValue := e.findColumnValue(rowData, columnName)
-				if columnValue != nil {
-					indexKey := fmt.Sprintf("%v", columnValue)
-					indexManager.Insert(indexName, indexKey, []byte(rowKey))
+		var columnName string
+		indexMetadataKey := fmt.Sprintf("_index_metadata:%s", indexName)
+		indexMetadata, err := e.storage.Get(indexMetadataKey)
+		if err == nil {
+			metadata := string(indexMetadata)
+			if strings.Contains(metadata, fmt.Sprintf("table:%s", tableName)) {
+				parts := strings.Split(metadata, ":")
+				if len(parts) >= 4 {
+					columnName = parts[3]
 				}
+			}
+		}
+		if columnName == "" {
+			if strings.HasPrefix(indexName, fmt.Sprintf("%s_", tableName)) && strings.HasSuffix(indexName, "_idx") {
+				parts := strings.Split(indexName, "_")
+				if len(parts) >= 2 {
+					columnName = parts[1]
+				}
+			}
+		}
+		if columnName != "" {
+			columnValue := e.findColumnValue(rowData, columnName)
+			if columnValue != nil {
+				indexKey := fmt.Sprintf("%v", columnValue)
+				indexManager.Insert(indexName, indexKey, []byte(rowKey))
 			}
 		}
 	}
@@ -614,21 +736,35 @@ func (e *Executor) updateIndexesOnUpdate(tableName, rowKey string, oldRowData, n
 	indexNames := indexManager.ListIndexes()
 
 	for _, indexName := range indexNames {
+		var columnName string
 		if strings.HasPrefix(indexName, fmt.Sprintf("%s_", tableName)) && strings.HasSuffix(indexName, "_idx") {
 			parts := strings.Split(indexName, "_")
 			if len(parts) >= 2 {
-				columnName := parts[1]
-				oldValue := e.findColumnValue(oldRowData, columnName)
-				newValue := e.findColumnValue(newRowData, columnName)
+				columnName = parts[1]
+			}
+		}
+		indexMetadataKey := fmt.Sprintf("_index_metadata:%s", indexName)
+		indexMetadata, err := e.storage.Get(indexMetadataKey)
+		if err == nil {
+			metadata := string(indexMetadata)
+			if strings.Contains(metadata, fmt.Sprintf("table:%s", tableName)) {
+				parts := strings.Split(metadata, ":")
+				if len(parts) >= 4 {
+					columnName = parts[3]
+				}
+			}
+		}
+		if columnName != "" {
+			oldValue := e.findColumnValue(oldRowData, columnName)
+			newValue := e.findColumnValue(newRowData, columnName)
 
-				if oldValue != nil {
-					oldIndexKey := fmt.Sprintf("%v", oldValue)
-					indexManager.Delete(indexName, oldIndexKey)
-				}
-				if newValue != nil {
-					newIndexKey := fmt.Sprintf("%v", newValue)
-					indexManager.Insert(indexName, newIndexKey, []byte(rowKey))
-				}
+			if oldValue != nil {
+				oldIndexKey := fmt.Sprintf("%v", oldValue)
+				indexManager.Delete(indexName, oldIndexKey)
+			}
+			if newValue != nil {
+				newIndexKey := fmt.Sprintf("%v", newValue)
+				indexManager.Insert(indexName, newIndexKey, []byte(rowKey))
 			}
 		}
 	}
@@ -639,15 +775,29 @@ func (e *Executor) updateIndexesOnDelete(tableName, rowKey string, rowData []int
 	indexNames := indexManager.ListIndexes()
 
 	for _, indexName := range indexNames {
+		var columnName string
 		if strings.HasPrefix(indexName, fmt.Sprintf("%s_", tableName)) && strings.HasSuffix(indexName, "_idx") {
 			parts := strings.Split(indexName, "_")
 			if len(parts) >= 2 {
-				columnName := parts[1]
-				columnValue := e.findColumnValue(rowData, columnName)
-				if columnValue != nil {
-					indexKey := fmt.Sprintf("%v", columnValue)
-					indexManager.Delete(indexName, indexKey)
+				columnName = parts[1]
+			}
+		}
+		indexMetadataKey := fmt.Sprintf("_index_metadata:%s", indexName)
+		indexMetadata, err := e.storage.Get(indexMetadataKey)
+		if err == nil {
+			metadata := string(indexMetadata)
+			if strings.Contains(metadata, fmt.Sprintf("table:%s", tableName)) {
+				parts := strings.Split(metadata, ":")
+				if len(parts) >= 4 {
+					columnName = parts[3]
 				}
+			}
+		}
+		if columnName != "" {
+			columnValue := e.findColumnValue(rowData, columnName)
+			if columnValue != nil {
+				indexKey := fmt.Sprintf("%v", columnValue)
+				indexManager.Delete(indexName, indexKey)
 			}
 		}
 	}
