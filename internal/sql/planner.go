@@ -63,7 +63,6 @@ func (p *Planner) PlanSelect(stmt *SelectStatement) (*ExecutionPlan, error) {
 	indexManager := p.storage.GetIndexManager()
 	allIndexes := indexManager.ListIndexes()
 	
-	var bestIndex string
 	var foundIndex string
 	
 	for _, idx := range allIndexes {
@@ -90,7 +89,6 @@ func (p *Planner) PlanSelect(stmt *SelectStatement) (*ExecutionPlan, error) {
 		plan.IndexColumn = columnName
 		plan.IndexValue = columnValue
 		plan.EstimatedCost = 10
-		bestIndex = foundIndex
 	} else {
 		plan.Type = PlanTypeTableScan
 		plan.EstimatedCost = 1000

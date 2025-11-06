@@ -9,15 +9,15 @@ import (
 	"startdb/internal/storage"
 )
 
-// Executor represents a SQL query executor
 type Executor struct {
 	storage *storage.Storage
+	planner *Planner
 }
 
-// NewExecutor creates a new SQL executor
 func NewExecutor(storage *storage.Storage) *Executor {
 	return &Executor{
 		storage: storage,
+		planner: NewPlanner(storage),
 	}
 }
 
