@@ -206,11 +206,15 @@ func (e *Executor) executeInsert(stmt *InsertStatement) (*QueryResult, error) {
 }
 
 func (e *Executor) executeUpdate(stmt *UpdateStatement) (*QueryResult, error) {
-	// Check if table exists
 	tableKey := fmt.Sprintf("_table_metadata:%s", stmt.Table)
 	_, err := e.storage.Get(tableKey)
 	if err != nil {
 		return nil, fmt.Errorf("table '%s' does not exist", stmt.Table)
+	}
+
+	plan, err := e.planner.PlanUpdate(stmt)
+	if err != nil {
+		return nil, fmt.Errorf("failed to plan query: %w", err)
 	}
 
 	keys, err := e.storage.Keys()
@@ -220,40 +224,62 @@ func (e *Executor) executeUpdate(stmt *UpdateStatement) (*QueryResult, error) {
 
 	updatedCount := 0
 	tablePrefix := stmt.Table + ":"
+	indexManager := e.storage.GetIndexManager()
 
-	for _, key := range keys {
-		if strings.HasPrefix(key, tablePrefix) {
-			value, err := e.storage.Get(key)
-			if err != nil {
-				continue
+	if plan.Type == PlanTypeIndexScan && plan.IndexName != "" {
+		indexKey := fmt.Sprintf("%v", plan.IndexValue)
+		rowKey, found := indexManager.Search(plan.IndexName, indexKey)
+		if found {
+			keyStr := string(rowKey)
+			if strings.HasPrefix(keyStr, tablePrefix) {
+				value, err := e.storage.Get(keyStr)
+				if err == nil {
+					rowData, err := e.parseRowData(string(value))
+					if err == nil {
+						matches, err := e.evaluateWhere(rowData, stmt.Where)
+						if err == nil && matches {
+							updatedRowData := e.updateRowData(rowData, stmt.Set)
+							updatedRowStr := e.serializeRowData(updatedRowData)
+							err = e.storage.Put(keyStr, []byte(updatedRowStr))
+							if err == nil {
+								e.updateIndexesOnUpdate(stmt.Table, keyStr, rowData, updatedRowData)
+								updatedCount++
+							}
+						}
+					}
+				}
 			}
-
-			// Parse the stored data
-			rowData, err := e.parseRowData(string(value))
-			if err != nil {
-				continue
-			}
-
-			// Apply WHERE clause if present
-			if stmt.Where != nil {
-				matches, err := e.evaluateWhere(rowData, stmt.Where)
+		}
+	} else {
+		for _, key := range keys {
+			if strings.HasPrefix(key, tablePrefix) {
+				value, err := e.storage.Get(key)
 				if err != nil {
 					continue
 				}
-				if !matches {
+
+				rowData, err := e.parseRowData(string(value))
+				if err != nil {
 					continue
 				}
-			}
 
-			updatedRowData := e.updateRowData(rowData, stmt.Set)
-			updatedRowStr := e.serializeRowData(updatedRowData)
-			err = e.storage.Put(key, []byte(updatedRowStr))
-			if err != nil {
-				return nil, fmt.Errorf("failed to update row: %w", err)
-			}
+				if stmt.Where != nil {
+					matches, err := e.evaluateWhere(rowData, stmt.Where)
+					if err != nil || !matches {
+						continue
+					}
+				}
 
-			e.updateIndexesOnUpdate(stmt.Table, key, rowData, updatedRowData)
-			updatedCount++
+				updatedRowData := e.updateRowData(rowData, stmt.Set)
+				updatedRowStr := e.serializeRowData(updatedRowData)
+				err = e.storage.Put(key, []byte(updatedRowStr))
+				if err != nil {
+					return nil, fmt.Errorf("failed to update row: %w", err)
+				}
+
+				e.updateIndexesOnUpdate(stmt.Table, key, rowData, updatedRowData)
+				updatedCount++
+			}
 		}
 	}
 
@@ -265,11 +291,15 @@ func (e *Executor) executeUpdate(stmt *UpdateStatement) (*QueryResult, error) {
 }
 
 func (e *Executor) executeDelete(stmt *DeleteStatement) (*QueryResult, error) {
-	// Check if table exists
 	tableKey := fmt.Sprintf("_table_metadata:%s", stmt.Table)
 	_, err := e.storage.Get(tableKey)
 	if err != nil {
 		return nil, fmt.Errorf("table '%s' does not exist", stmt.Table)
+	}
+
+	plan, err := e.planner.PlanDelete(stmt)
+	if err != nil {
+		return nil, fmt.Errorf("failed to plan query: %w", err)
 	}
 
 	keys, err := e.storage.Keys()
@@ -279,38 +309,58 @@ func (e *Executor) executeDelete(stmt *DeleteStatement) (*QueryResult, error) {
 
 	deletedCount := 0
 	tablePrefix := stmt.Table + ":"
+	indexManager := e.storage.GetIndexManager()
 
-	for _, key := range keys {
-		if strings.HasPrefix(key, tablePrefix) {
-			value, err := e.storage.Get(key)
-			if err != nil {
-				continue
+	if plan.Type == PlanTypeIndexScan && plan.IndexName != "" {
+		indexKey := fmt.Sprintf("%v", plan.IndexValue)
+		rowKey, found := indexManager.Search(plan.IndexName, indexKey)
+		if found {
+			keyStr := string(rowKey)
+			if strings.HasPrefix(keyStr, tablePrefix) {
+				value, err := e.storage.Get(keyStr)
+				if err == nil {
+					rowData, err := e.parseRowData(string(value))
+					if err == nil {
+						matches, err := e.evaluateWhere(rowData, stmt.Where)
+						if err == nil && matches {
+							err = e.storage.Delete(keyStr)
+							if err == nil {
+								e.updateIndexesOnDelete(stmt.Table, keyStr, rowData)
+								deletedCount++
+							}
+						}
+					}
+				}
 			}
-
-			// Parse the stored data
-			rowData, err := e.parseRowData(string(value))
-			if err != nil {
-				continue
-			}
-
-			// Apply WHERE clause if present
-			if stmt.Where != nil {
-				matches, err := e.evaluateWhere(rowData, stmt.Where)
+		}
+	} else {
+		for _, key := range keys {
+			if strings.HasPrefix(key, tablePrefix) {
+				value, err := e.storage.Get(key)
 				if err != nil {
 					continue
 				}
-				if !matches {
+
+				rowData, err := e.parseRowData(string(value))
+				if err != nil {
 					continue
 				}
-			}
 
-			err = e.storage.Delete(key)
-			if err != nil {
-				return nil, fmt.Errorf("failed to delete row: %w", err)
-			}
+				if stmt.Where != nil {
+					matches, err := e.evaluateWhere(rowData, stmt.Where)
+					if err != nil || !matches {
+						continue
+					}
+				}
 
-			e.updateIndexesOnDelete(stmt.Table, key, rowData)
-			deletedCount++
+				err = e.storage.Delete(key)
+				if err != nil {
+					return nil, fmt.Errorf("failed to delete row: %w", err)
+				}
+
+				e.updateIndexesOnDelete(stmt.Table, key, rowData)
+				deletedCount++
+			}
 		}
 	}
 
