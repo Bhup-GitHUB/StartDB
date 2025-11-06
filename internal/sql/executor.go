@@ -52,56 +52,34 @@ func (e *Executor) executeSelect(stmt *SelectStatement) (*QueryResult, error) {
 		return nil, fmt.Errorf("table '%s' does not exist", stmt.Table)
 	}
 
+	plan, err := e.planner.PlanSelect(stmt)
+	if err != nil {
+		return nil, fmt.Errorf("failed to plan query: %w", err)
+	}
+
 	var rows [][]interface{}
 	tablePrefix := stmt.Table + ":"
 	indexManager := e.storage.GetIndexManager()
-	usedIndex := false
 
-	if stmt.Where != nil {
-		columnName, columnValue, canUseIndex := e.extractIndexableColumn(stmt.Where)
-		if canUseIndex && columnName != "" && columnValue != nil {
-			indexName := fmt.Sprintf("%s_%s_%s", stmt.Table, columnName, "idx")
-			allIndexes := indexManager.ListIndexes()
-			foundIndex := ""
-			for _, idx := range allIndexes {
-				if idx == indexName {
-					foundIndex = idx
-					break
-				}
-				indexMetadataKey := fmt.Sprintf("_index_metadata:%s", idx)
-				indexMetadata, err := e.storage.Get(indexMetadataKey)
+	if plan.Type == PlanTypeIndexScan && plan.IndexName != "" {
+		indexKey := fmt.Sprintf("%v", plan.IndexValue)
+		rowKey, found := indexManager.Search(plan.IndexName, indexKey)
+		if found {
+			keyStr := string(rowKey)
+			if strings.HasPrefix(keyStr, tablePrefix) {
+				value, err := e.storage.Get(keyStr)
 				if err == nil {
-					metadata := string(indexMetadata)
-					if strings.Contains(metadata, fmt.Sprintf("table:%s", stmt.Table)) && strings.Contains(metadata, fmt.Sprintf("column:%s", columnName)) {
-						foundIndex = idx
-						break
-					}
-				}
-			}
-			if foundIndex != "" {
-				indexKey := fmt.Sprintf("%v", columnValue)
-				rowKey, found := indexManager.Search(foundIndex, indexKey)
-				if found {
-					keyStr := string(rowKey)
-					if strings.HasPrefix(keyStr, tablePrefix) {
-						value, err := e.storage.Get(keyStr)
-						if err == nil {
-							rowData, err := e.parseRowData(string(value))
-							if err == nil {
-								matches, err := e.evaluateWhere(rowData, stmt.Where)
-								if err == nil && matches {
-									rows = append(rows, rowData)
-									usedIndex = true
-								}
-							}
+					rowData, err := e.parseRowData(string(value))
+					if err == nil {
+						matches, err := e.evaluateWhere(rowData, stmt.Where)
+						if err == nil && matches {
+							rows = append(rows, rowData)
 						}
 					}
 				}
 			}
 		}
-	}
-
-	if !usedIndex {
+	} else {
 		keys, err := e.storage.Keys()
 		if err != nil {
 			return nil, fmt.Errorf("failed to get keys: %w", err)
