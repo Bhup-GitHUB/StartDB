@@ -95,12 +95,12 @@ _StartDB's layered architecture with AI-powered optimization_
 - [x] Crash recovery
 - [x] Concurrent transactions
 
-### Phase 3: Query Engine 📅
+### Phase 3: Query Engine ✅
 
-- [ ] SQL parser
-- [ ] B-Tree indexing
+- [x] SQL parser
+- [x] B-Tree indexing
 - [x] Query planner
-- [ ] Join operations
+- [x] Join operations (INNER, LEFT, RIGHT JOIN)
 
 ### Phase 4: AI Integration 📅
 

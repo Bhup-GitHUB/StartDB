@@ -75,6 +75,76 @@ func (p *Parser) parseSelectStatement() (*SelectStatement, error) {
 	}
 	stmt.Table = tableToken.Literal
 
+	// Parse JOIN clauses
+	for {
+		peekToken := p.lexer.Peek()
+		if peekToken.Type != TokenKeyword {
+			break
+		}
+		
+		keyword := strings.ToUpper(peekToken.Literal)
+		var joinType JoinType
+		var foundJoin bool
+		
+		switch keyword {
+		case "INNER":
+			p.lexer.Next() // consume INNER
+			if !p.expectKeyword("JOIN") {
+				return nil, fmt.Errorf("expected JOIN after INNER")
+			}
+			joinType = JoinTypeInner
+			foundJoin = true
+		case "LEFT":
+			p.lexer.Next() // consume LEFT
+			if !p.expectKeyword("JOIN") {
+				return nil, fmt.Errorf("expected JOIN after LEFT")
+			}
+			joinType = JoinTypeLeft
+			foundJoin = true
+		case "RIGHT":
+			p.lexer.Next() // consume RIGHT
+			if !p.expectKeyword("JOIN") {
+				return nil, fmt.Errorf("expected JOIN after RIGHT")
+			}
+			joinType = JoinTypeRight
+			foundJoin = true
+		case "JOIN":
+			p.lexer.Next() // consume JOIN (defaults to INNER)
+			joinType = JoinTypeInner
+			foundJoin = true
+		default:
+			// Not a JOIN keyword, exit loop
+		}
+		
+		if !foundJoin {
+			break
+		}
+		
+		// Parse table name
+		joinTableToken := p.lexer.Next()
+		if joinTableToken.Type != TokenIdentifier {
+			return nil, fmt.Errorf("expected table name after JOIN")
+		}
+		
+		// Parse ON condition
+		if !p.expectKeyword("ON") {
+			return nil, fmt.Errorf("expected ON after JOIN table")
+		}
+		
+		condition, err := p.parseExpression()
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse JOIN condition: %w", err)
+		}
+		
+		joinClause := &JoinClause{
+			Type:      joinType,
+			Table:     joinTableToken.Literal,
+			Condition: condition,
+		}
+		
+		stmt.Joins = append(stmt.Joins, joinClause)
+	}
+
 	// Parse WHERE clause
 	if p.lexer.Peek().Type == TokenKeyword && strings.ToUpper(p.lexer.Peek().Literal) == "WHERE" {
 		p.lexer.Next() // consume WHERE
@@ -594,7 +664,7 @@ func (p *Parser) parseColumnDefinitions() ([]ColumnDefinition, error) {
 
 func (p *Parser) expectKeyword(keyword string) bool {
 	token := p.lexer.Peek()
-	if token.Type == TokenKeyword && strings.ToUpper(token.Literal) == strings.ToUpper(keyword) {
+	if token.Type == TokenKeyword && strings.EqualFold(token.Literal, keyword) {
 		p.lexer.Next()
 		return true
 	}

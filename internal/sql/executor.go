@@ -52,59 +52,78 @@ func (e *Executor) executeSelect(stmt *SelectStatement) (*QueryResult, error) {
 		return nil, fmt.Errorf("table '%s' does not exist", stmt.Table)
 	}
 
+	// Check if joined tables exist
+	for _, join := range stmt.Joins {
+		joinTableKey := fmt.Sprintf("_table_metadata:%s", join.Table)
+		_, err := e.storage.Get(joinTableKey)
+		if err != nil {
+			return nil, fmt.Errorf("table '%s' does not exist", join.Table)
+		}
+	}
+
 	plan, err := e.planner.PlanSelect(stmt)
 	if err != nil {
 		return nil, fmt.Errorf("failed to plan query: %w", err)
 	}
 
 	var rows [][]interface{}
-	tablePrefix := stmt.Table + ":"
-	indexManager := e.storage.GetIndexManager()
 
-	if plan.Type == PlanTypeIndexScan && plan.IndexName != "" {
-		indexKey := fmt.Sprintf("%v", plan.IndexValue)
-		rowKey, found := indexManager.Search(plan.IndexName, indexKey)
-		if found {
-			keyStr := string(rowKey)
-			if strings.HasPrefix(keyStr, tablePrefix) {
-				value, err := e.storage.Get(keyStr)
-				if err == nil {
-					rowData, err := e.parseRowData(string(value))
+	// If there are JOINs, process them
+	if len(stmt.Joins) > 0 {
+		rows, err = e.executeSelectWithJoins(stmt, plan)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		// No JOINs, use original logic
+		tablePrefix := stmt.Table + ":"
+		indexManager := e.storage.GetIndexManager()
+
+		if plan.Type == PlanTypeIndexScan && plan.IndexName != "" {
+			indexKey := fmt.Sprintf("%v", plan.IndexValue)
+			rowKey, found := indexManager.Search(plan.IndexName, indexKey)
+			if found {
+				keyStr := string(rowKey)
+				if strings.HasPrefix(keyStr, tablePrefix) {
+					value, err := e.storage.Get(keyStr)
 					if err == nil {
-						matches, err := e.evaluateWhere(rowData, stmt.Where)
-						if err == nil && matches {
-							rows = append(rows, rowData)
+						rowData, err := e.parseRowData(string(value))
+						if err == nil {
+							matches, err := e.evaluateWhere(rowData, stmt.Where)
+							if err == nil && matches {
+								rows = append(rows, rowData)
+							}
 						}
 					}
 				}
 			}
-		}
-	} else {
-		keys, err := e.storage.Keys()
-		if err != nil {
-			return nil, fmt.Errorf("failed to get keys: %w", err)
-		}
+		} else {
+			keys, err := e.storage.Keys()
+			if err != nil {
+				return nil, fmt.Errorf("failed to get keys: %w", err)
+			}
 
-		for _, key := range keys {
-			if strings.HasPrefix(key, tablePrefix) {
-				value, err := e.storage.Get(key)
-				if err != nil {
-					continue
-				}
-
-				rowData, err := e.parseRowData(string(value))
-				if err != nil {
-					continue
-				}
-
-				if stmt.Where != nil {
-					matches, err := e.evaluateWhere(rowData, stmt.Where)
-					if err != nil || !matches {
+			for _, key := range keys {
+				if strings.HasPrefix(key, tablePrefix) {
+					value, err := e.storage.Get(key)
+					if err != nil {
 						continue
 					}
-				}
 
-				rows = append(rows, rowData)
+					rowData, err := e.parseRowData(string(value))
+					if err != nil {
+						continue
+					}
+
+					if stmt.Where != nil {
+						matches, err := e.evaluateWhere(rowData, stmt.Where)
+						if err != nil || !matches {
+							continue
+						}
+					}
+
+					rows = append(rows, rowData)
+				}
 			}
 		}
 	}
@@ -136,6 +155,157 @@ func (e *Executor) executeSelect(stmt *SelectStatement) (*QueryResult, error) {
 		Rows:    rows,
 		Count:   len(rows),
 	}, nil
+}
+
+// executeSelectWithJoins handles SELECT queries with JOIN clauses
+func (e *Executor) executeSelectWithJoins(stmt *SelectStatement, plan *ExecutionPlan) ([][]interface{}, error) {
+	// Load rows from base table
+	baseRows, err := e.loadTableRows(stmt.Table)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load rows from table '%s': %w", stmt.Table, err)
+	}
+
+	// Process each JOIN sequentially
+	currentRows := baseRows
+	tableAliases := map[string]string{stmt.Table: stmt.Table}
+
+	for _, join := range stmt.Joins {
+		// Load rows from joined table
+		joinRows, err := e.loadTableRows(join.Table)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load rows from table '%s': %w", join.Table, err)
+		}
+
+		tableAliases[join.Table] = join.Table
+
+		// Perform the JOIN
+		var joinedRows [][]interface{}
+		for _, leftRow := range currentRows {
+			matched := false
+			for _, rightRow := range joinRows {
+				// Evaluate JOIN condition with both rows
+				matches, err := e.evaluateJoinCondition(leftRow, rightRow, stmt.Table, join.Table, join.Condition)
+				if err != nil {
+					continue
+				}
+
+				if matches {
+					matched = true
+					// Combine rows
+					combinedRow := e.combineRows(leftRow, rightRow)
+					joinedRows = append(joinedRows, combinedRow)
+				}
+			}
+
+			// Handle LEFT JOIN: include left row even if no match
+			if join.Type == JoinTypeLeft && !matched {
+				// Create a row with NULL values for right table
+				rightRowNull := e.createNullRow(joinRows)
+				combinedRow := e.combineRows(leftRow, rightRowNull)
+				joinedRows = append(joinedRows, combinedRow)
+			}
+		}
+
+		// Handle RIGHT JOIN: include right rows that didn't match
+		if join.Type == JoinTypeRight {
+			for _, rightRow := range joinRows {
+				matched := false
+				for _, leftRow := range currentRows {
+					matches, err := e.evaluateJoinCondition(leftRow, rightRow, stmt.Table, join.Table, join.Condition)
+					if err == nil && matches {
+						matched = true
+						break
+					}
+				}
+				if !matched {
+					// Create a row with NULL values for left table
+					leftRowNull := e.createNullRow(currentRows)
+					combinedRow := e.combineRows(leftRowNull, rightRow)
+					joinedRows = append(joinedRows, combinedRow)
+				}
+			}
+		}
+
+		currentRows = joinedRows
+	}
+
+	// Apply WHERE clause to joined results
+	if stmt.Where != nil {
+		var filteredRows [][]interface{}
+		for _, row := range currentRows {
+			matches, err := e.evaluateWhere(row, stmt.Where)
+			if err == nil && matches {
+				filteredRows = append(filteredRows, row)
+			}
+		}
+		currentRows = filteredRows
+	}
+
+	return currentRows, nil
+}
+
+// loadTableRows loads all rows from a table
+func (e *Executor) loadTableRows(tableName string) ([][]interface{}, error) {
+	var rows [][]interface{}
+	tablePrefix := tableName + ":"
+	
+	keys, err := e.storage.Keys()
+	if err != nil {
+		return nil, err
+	}
+
+	for _, key := range keys {
+		if strings.HasPrefix(key, tablePrefix) {
+			value, err := e.storage.Get(key)
+			if err != nil {
+				continue
+			}
+
+			rowData, err := e.parseRowData(string(value))
+			if err != nil {
+				continue
+			}
+
+			rows = append(rows, rowData)
+		}
+	}
+
+	return rows, nil
+}
+
+// evaluateJoinCondition evaluates a JOIN condition with two rows
+func (e *Executor) evaluateJoinCondition(leftRow, rightRow []interface{}, leftTable, rightTable string, condition Expression) (bool, error) {
+	// Create a combined row context for evaluation
+	combinedRow := e.combineRows(leftRow, rightRow)
+	
+	// Evaluate the condition
+	return e.evaluateWhere(combinedRow, condition)
+}
+
+// combineRows combines two rows into one
+func (e *Executor) combineRows(leftRow, rightRow []interface{}) []interface{} {
+	combined := make([]interface{}, 0, len(leftRow)+len(rightRow))
+	// Append left row (including ID)
+	combined = append(combined, leftRow...)
+	// Append right row values (skip first element which is the ID)
+	if len(rightRow) > 1 {
+		combined = append(combined, rightRow[1:]...)
+	}
+	return combined
+}
+
+// createNullRow creates a row with NULL values matching the structure of existing rows
+func (e *Executor) createNullRow(sampleRows [][]interface{}) []interface{} {
+	if len(sampleRows) == 0 {
+		return []interface{}{nil}
+	}
+	
+	// Create a row with NULL values matching the structure
+	nullRow := make([]interface{}, len(sampleRows[0]))
+	for i := range nullRow {
+		nullRow[i] = nil
+	}
+	return nullRow
 }
 
 func (e *Executor) executeInsert(stmt *InsertStatement) (*QueryResult, error) {

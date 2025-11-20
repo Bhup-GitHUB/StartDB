@@ -22,10 +22,27 @@ type Expression interface {
 	expressionNode()
 }
 
+// JoinType represents the type of JOIN
+type JoinType string
+
+const (
+	JoinTypeInner JoinType = "INNER"
+	JoinTypeLeft  JoinType = "LEFT"
+	JoinTypeRight JoinType = "RIGHT"
+)
+
+// JoinClause represents a JOIN clause
+type JoinClause struct {
+	Type      JoinType
+	Table     string
+	Condition Expression // ON condition
+}
+
 // SelectStatement represents a SELECT statement
 type SelectStatement struct {
 	Fields    []Expression
 	Table     string
+	Joins     []*JoinClause
 	Where     Expression
 	OrderBy   []Expression
 	Limit     int
