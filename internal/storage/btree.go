@@ -16,13 +16,13 @@ type BTreeNode struct {
 type BTree struct {
 	Root      *BTreeNode
 	MinDegree int
-	Size      int
+	size      int
 }
 
 func NewBTree(minDegree int) *BTree {
 	return &BTree{
 		MinDegree: minDegree,
-		Size:      0,
+		size:      0,
 	}
 }
 
@@ -34,7 +34,7 @@ func (bt *BTree) Insert(key string, value []byte) {
 			Values:    [][]byte{value},
 			MinDegree: bt.MinDegree,
 		}
-		bt.Size = 1
+		bt.size = 1
 		return
 	}
 
@@ -52,7 +52,7 @@ func (bt *BTree) Insert(key string, value []byte) {
 	}
 
 	bt.insertNonFull(bt.Root, key, value)
-	bt.Size++
+	bt.size++
 }
 
 func (bt *BTree) insertNonFull(node *BTreeNode, key string, value []byte) {
@@ -149,7 +149,7 @@ func (bt *BTree) Delete(key string) bool {
 	}
 	found := bt.deleteFromNode(bt.Root, key)
 	if found {
-		bt.Size--
+		bt.size--
 		if len(bt.Root.Keys) == 0 && !bt.Root.IsLeaf {
 			bt.Root = bt.Root.Children[0]
 			bt.Root.Parent = nil
@@ -339,6 +339,11 @@ func (bt *BTree) GetAll() []KeyValue {
 		bt.getAllFromNode(bt.Root, &result)
 	}
 	return result
+}
+
+// Size returns the number of entries in the B-Tree
+func (bt *BTree) Size() int {
+	return bt.size
 }
 
 func (bt *BTree) getAllFromNode(node *BTreeNode, result *[]KeyValue) {

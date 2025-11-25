@@ -356,7 +356,9 @@ func (p *Parser) parseCreateTable() (*CreateTableStatement, error) {
 }
 
 func (p *Parser) parseCreateIndex() (*CreateIndexStatement, error) {
-	stmt := &CreateIndexStatement{}
+	stmt := &CreateIndexStatement{
+		IndexType: "BTREE", // Default to BTREE
+	}
 
 	if !p.expectKeyword("INDEX") {
 		return nil, fmt.Errorf("expected INDEX")
@@ -390,6 +392,20 @@ func (p *Parser) parseCreateIndex() (*CreateIndexStatement, error) {
 
 	if !p.expectToken(TokenRightParen) {
 		return nil, fmt.Errorf("expected )")
+	}
+
+	// Parse optional USING clause
+	if p.lexer.Peek().Type == TokenKeyword && strings.ToUpper(p.lexer.Peek().Literal) == "USING" {
+		p.lexer.Next() // consume USING
+		typeToken := p.lexer.Next()
+		if typeToken.Type != TokenIdentifier {
+			return nil, fmt.Errorf("expected index type (BTREE or HASH) after USING")
+		}
+		indexType := strings.ToUpper(typeToken.Literal)
+		if indexType != "BTREE" && indexType != "HASH" {
+			return nil, fmt.Errorf("invalid index type: %s (expected BTREE or HASH)", indexType)
+		}
+		stmt.IndexType = indexType
 	}
 
 	return stmt, nil

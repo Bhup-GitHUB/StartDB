@@ -167,7 +167,7 @@ func (im *IndexManager) ListIndexes() []string {
 
 func (im *IndexManager) GetIndexInfo(indexName string) (map[string]interface{}, error) {
 	im.mu.RLock()
-	index, exists := im.indexes[indexName]
+	entry, exists := im.indexes[indexName]
 	im.mu.RUnlock()
 	
 	if !exists {
@@ -175,10 +175,18 @@ func (im *IndexManager) GetIndexInfo(indexName string) (map[string]interface{}, 
 	}
 	
 	info := map[string]interface{}{
-		"name":       indexName,
-		"size":       index.Size,
-		"min_degree": index.MinDegree,
-		"is_empty":   index.Root == nil,
+		"name": indexName,
+		"type": string(entry.Type),
+		"size": entry.Index.Size(),
+	}
+	
+	if entry.Type == IndexTypeBTree {
+		btree := entry.Index.(*BTree)
+		info["min_degree"] = btree.MinDegree
+		info["is_empty"] = btree.Root == nil
+	} else if entry.Type == IndexTypeHash {
+		hashIdx := entry.Index.(*HashIndex)
+		info["bucket_count"] = len(hashIdx.buckets)
 	}
 	
 	return info, nil
@@ -196,11 +204,26 @@ func (im *IndexManager) ClearIndex(indexName string) error {
 	im.mu.Lock()
 	defer im.mu.Unlock()
 	
-	if _, exists := im.indexes[indexName]; !exists {
+	entry, exists := im.indexes[indexName]
+	if !exists {
 		return fmt.Errorf("index '%s' does not exist", indexName)
 	}
 	
-	im.indexes[indexName] = NewBTree(im.indexes[indexName].MinDegree)
+	if entry.Type == IndexTypeBTree {
+		btree := entry.Index.(*BTree)
+		im.indexes[indexName] = &IndexEntry{
+			Index: NewBTree(btree.MinDegree),
+			Type:  IndexTypeBTree,
+		}
+	} else if entry.Type == IndexTypeHash {
+		hashIdx := entry.Index.(*HashIndex)
+		newHashIdx := NewHashIndex(len(hashIdx.buckets))
+		im.indexes[indexName] = &IndexEntry{
+			Index: newHashIdx,
+			Type:  IndexTypeHash,
+		}
+	}
+	
 	return nil
 }
 
@@ -209,13 +232,36 @@ func (im *IndexManager) GetIndexStats() map[string]map[string]interface{} {
 	defer im.mu.RUnlock()
 	
 	stats := make(map[string]map[string]interface{})
-	for name, index := range im.indexes {
-		stats[name] = map[string]interface{}{
-			"size":       index.Size,
-			"min_degree": index.MinDegree,
-			"is_empty":   index.Root == nil,
+	for name, entry := range im.indexes {
+		stat := map[string]interface{}{
+			"type": string(entry.Type),
+			"size": entry.Index.Size(),
 		}
+		
+		if entry.Type == IndexTypeBTree {
+			btree := entry.Index.(*BTree)
+			stat["min_degree"] = btree.MinDegree
+			stat["is_empty"] = btree.Root == nil
+		} else if entry.Type == IndexTypeHash {
+			hashIdx := entry.Index.(*HashIndex)
+			stat["bucket_count"] = len(hashIdx.buckets)
+		}
+		
+		stats[name] = stat
 	}
 	
 	return stats
+}
+
+// GetIndexType returns the type of an index
+func (im *IndexManager) GetIndexType(indexName string) (IndexType, error) {
+	im.mu.RLock()
+	defer im.mu.RUnlock()
+	
+	entry, exists := im.indexes[indexName]
+	if !exists {
+		return "", fmt.Errorf("index '%s' does not exist", indexName)
+	}
+	
+	return entry.Type, nil
 }

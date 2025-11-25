@@ -123,6 +123,7 @@ type CreateIndexStatement struct {
 	IndexName string
 	Table     string
 	Column    string
+	IndexType string // "BTREE" or "HASH", defaults to "BTREE"
 }
 
 func (c *CreateIndexStatement) statementNode() {}
